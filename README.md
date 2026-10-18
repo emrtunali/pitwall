@@ -256,7 +256,7 @@ git clone https://github.com/emrtunali/pitwall && cd pitwall
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 
-pitwall serve              # sync new races, start the site, open the browser
+pitwall serve              # sync new races, start the site, open the browser (or: python -m pitwall serve)
 pitwall serve --offline    # use what is already downloaded
 pitwall serve --rebuild    # rebuild everything yourself from OpenF1 (~1 min per race, cached afterwards)
 pitwall evaluate           # rerun both backtests -> results/
