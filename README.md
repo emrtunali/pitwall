@@ -232,12 +232,23 @@ races the model matches the "standings predict the race" baseline (top-10 log-li
 and is far better than uniform (−23.92). As of Singapore, Antonelli leads by 102 points with 150 left, and the
 simulation gives him >99 %.
 
-### Desktop widget (macOS)
+### Desktop widgets (macOS)
+
+Two ways to keep the title odds on your Mac desktop, both in one app:
+
+1. **A real macOS widget (WidgetKit).** Right-click the desktop → **Edit Widgets…** → search
+   **Pitwall** → drag *F1 2026 Title Odds* onto the desktop. It comes in small, medium and large sizes and
+   refreshes every 30 minutes ([`widget/TitleOddsWidget.swift`](widget/TitleOddsWidget.swift)).
+2. **A floating panel** with the title-odds history sparkline. It sits at desktop level, can be dragged and is
+   always available ([`widget/PitwallWidget.swift`](widget/PitwallWidget.swift)).
 
 ```bash
-widget/build.sh                        # builds "Pitwall Widget.app" (Swift toolchain only)
-open "widget/Pitwall Widget.app"       # sits on the desktop, behind your windows
+widget/build.sh --install   # build, sign, copy to ~/Applications and launch
 ```
+
+macOS only loads signed widget extensions. The script signs with your *Apple Development* certificate (a free
+Apple ID in Xcode is enough). The first time, macOS asks to let `codesign` use the key: enter your login
+password and choose **Always Allow**.
 
 <img src="docs/widget.png" width="420" alt="Pitwall desktop widget">
 
@@ -251,6 +262,19 @@ the last copy for offline use. Drag it anywhere; right-click to refresh or quit.
 All three are derived from raw timing. None of them is published by Formula 1 or the data provider.
 
 ![Dirty Air Lab](docs/dirty-air.png)
+
+<img src="docs/car-2026.png" alt="Procedural 2026-regulation car" width="100%">
+
+**The car is modelled to the 2026 rules**, procedurally in three.js ([`site/car2026.mjs`](site/car2026.mjs)):
+3.40 m wheelbase, 1.90 m width, 18-inch wheels with the narrower 2026 tyres, a two-element front wing with an
+active flap, a three-element active rear wing with no beam wing and simplified endplates, halo, undercut
+sidepods, a partly flat floor and wing-endplate rain lights. Switching between **X-mode** (straight, low drag)
+and **Z-mode** (corners, high downforce) moves the wings. Rendering uses physically based clear-coat paint, a
+procedural carbon-weave texture, studio reflections, soft shadows and bloom.
+
+Liveries are colour schemes only, with no team or sponsor marks. The 2026 car models available online are
+paid or editorial-only and cannot be redistributed in an open-source repo, so the car is built from the
+regulations instead.
 
 **[Dirty Air Lab (3D)](https://emrtunali.github.io/pitwall/dirty-air.html).** Drag the gap slider and watch
 the wake of the car ahead reach the following car's front wing. Pick a circuit to see the lap time it

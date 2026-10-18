@@ -22,6 +22,9 @@
   input[type=range] { width: 100%; accent-color: var(--accent); }
   select { width: 100%; background: #161a21; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; }
   .row { display: flex; justify-content: space-between; align-items: baseline; }
+  .seg { display: flex; gap: 4px; background: #161a21; border-radius: 9px; padding: 3px; }
+  .seg button { flex: 1; border: 0; background: none; color: var(--muted); font: 600 12px system-ui; padding: 6px; border-radius: 7px; cursor: pointer; }
+  .seg button.on { background: #ffffff1c; color: var(--ink); }
   svg { width: 100%; height: 110px; display: block; margin-top: 10px; }
   .note { position: fixed; right: 18px; bottom: 18px; max-width: 330px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; font-size: 12px; color: var(--muted); z-index: 2; }
   @media (max-width: 760px) { .note { display: none; } .big { font-size: 30px; } .hud { padding: 12px 14px; } }
@@ -37,6 +40,8 @@
   <div class="muted" id="explain"></div>
   <label for="gap">Gap to the car ahead: <b id="gapv"></b></label>
   <input id="gap" type="range" min="0.25" max="3" step="0.05" value="0.7">
+  <label>2026 active aero <span class="muted">(illustrative: wings move, wake strength changes)</span></label>
+  <div class="seg" id="aero"><button data-m="X" class="on">X-mode · straight, low drag</button><button data-m="Z">Z-mode · corner, high downforce</button></div>
   <label for="circuit">Circuit</label>
   <select id="circuit"></select>
   <svg id="curve" viewBox="0 0 400 110" preserveAspectRatio="none"></svg>
@@ -49,6 +54,12 @@
 <script type="module">
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { buildCar, setAero } from "./car2026.mjs";
 
 // ---------------- data: measured cost per gap bin ----------------
 const index = await (await fetch("data/2026/index.json")).json();
@@ -82,21 +93,50 @@ const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 host.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x07090c);
-scene.fog = new THREE.Fog(0x07090c, 60, 170);
+{ // dusk sky gradient
+  const c = document.createElement("canvas"); c.width = 2; c.height = 256; const g = c.getContext("2d");
+  const grad = g.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0, "#0b1322"); grad.addColorStop(0.45, "#22355a"); grad.addColorStop(0.7, "#56607a"); grad.addColorStop(0.85, "#8a7f86"); grad.addColorStop(1, "#1a1d24");
+  g.fillStyle = grad; g.fillRect(0, 0, 2, 256);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; scene.background = tex;
+}
+scene.fog = new THREE.Fog(0x1a2233, 60, 170);
+const pmrem = new THREE.PMREMGenerator(renderer);
+const envMap = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;  // studio reflections on the paint
+scene.environment = envMap;
 const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
 camera.position.set(-19, 12, -4);
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(3, 0, 16);
 controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.49; controls.minDistance = 8; controls.maxDistance = 90;
-scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x101318, 1.1));
-const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(-20, 30, -10); scene.add(sun);
+scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x101318, 0.6));
+const sun = new THREE.DirectionalLight(0xfff1dc, 2.6); sun.position.set(-14, 22, -8);
+sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004;
+Object.assign(sun.shadow.camera, { left: -12, right: 12, top: 40, bottom: -10, near: 1, far: 80 });
+sun.target.position.set(0, 0, 14); scene.add(sun, sun.target);
 
 // track: asphalt, kerbs and dashed lines that scroll to suggest ~250 km/h
-const asphalt = new THREE.Mesh(new THREE.PlaneGeometry(26, 400), new THREE.MeshStandardMaterial({ color: 0x1a1d22, roughness: 0.95 }));
-asphalt.rotation.x = -Math.PI / 2; asphalt.position.z = 60; scene.add(asphalt);
+function noiseTexture(base, spread, size = 256, repeat = [4, 60]) {
+  const c = document.createElement("canvas"); c.width = c.height = size; const g = c.getContext("2d");
+  const img = g.createImageData(size, size);
+  for (let i = 0; i < size * size; i++) { const v = base + (Math.random() - 0.5) * spread; img.data.set([v, v, v + 2, 255], i * 4); }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(...repeat); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const asphalt = new THREE.Mesh(new THREE.PlaneGeometry(26, 400), new THREE.MeshStandardMaterial({ map: noiseTexture(38, 26), roughness: 0.9 }));
+asphalt.rotation.x = -Math.PI / 2; asphalt.position.z = 60; asphalt.receiveShadow = true; scene.add(asphalt);
+for (const s of [-1, 1]) {  // grass, run-off and barriers either side
+  const grass = new THREE.Mesh(new THREE.PlaneGeometry(60, 400), new THREE.MeshStandardMaterial({ color: 0x14261a, roughness: 1 }));
+  grass.rotation.x = -Math.PI / 2; grass.position.set(s * 43, -0.01, 60); scene.add(grass);
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.1, 400), new THREE.MeshStandardMaterial({ color: 0x2a2f38, roughness: 0.7 }));
+  wall.position.set(s * 19, 0.55, 60); wall.castShadow = wall.receiveShadow = true; scene.add(wall);
+  const band = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.25, 400), new THREE.MeshStandardMaterial({ color: 0xe10600, roughness: 0.5 }));
+  band.position.set(s * 19, 0.85, 60); scene.add(band);
+}
 const dashes = new THREE.Group();
 for (let i = 0; i < 40; i++) {
   for (const x of [-6, 6]) {
@@ -110,38 +150,8 @@ for (let i = 0; i < 40; i++) {
 }
 scene.add(dashes);
 
-// stylised 2026-style car built from primitives (1 unit ≈ 1 m)
-function makeCar(color) {
-  const car = new THREE.Group();
-  const paint = new THREE.MeshStandardMaterial({ color, metalness: 0.4, roughness: 0.35 });
-  const carbon = new THREE.MeshStandardMaterial({ color: 0x15171b, metalness: 0.3, roughness: 0.6 });
-  const tyre = new THREE.MeshStandardMaterial({ color: 0x0b0b0c, roughness: 0.9 });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.5, 3.4), paint); body.position.set(0, 0.45, 0.2); car.add(body);
-  const nose = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.32, 1.9, 12), paint);
-  nose.rotation.x = Math.PI / 2; nose.position.set(0, 0.35, -2.4); car.add(nose);
-  for (const s of [-1, 1]) {
-    const pod = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.42, 1.8), paint); pod.position.set(s * 0.7, 0.38, 0.3); car.add(pod);
-  }
-  const cover = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 1.6), paint); cover.position.set(0, 0.85, 0.9); car.add(cover);
-  const halo = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.04, 8, 24, Math.PI), carbon);
-  halo.rotation.set(-Math.PI / 2, 0, 0); halo.position.set(0, 0.8, -0.35); car.add(halo);
-  const fw = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.05, 0.45), carbon); fw.position.set(0, 0.12, -3.3); car.add(fw);
-  const fw2 = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.04, 0.25), paint); fw2.position.set(0, 0.2, -3.2); fw2.rotation.x = -0.25; car.add(fw2);
-  const rw = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.06, 0.4), carbon); rw.position.set(0, 1.0, 2.0); car.add(rw);
-  const rw2 = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.05, 0.25), paint); rw2.position.set(0, 1.12, 2.15); rw2.rotation.x = 0.35; car.add(rw2);
-  for (const s of [-1, 1]) {
-    const ep = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.55, 0.6), carbon); ep.position.set(s * 0.52, 0.85, 2.05); car.add(ep);
-  }
-  const wheels = [];
-  for (const [x, z, r] of [[-0.85, -1.75, 0.36], [0.85, -1.75, 0.36], [-0.85, 1.55, 0.38], [0.85, 1.55, 0.38]]) {
-    const w = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.38, 24), tyre);
-    w.rotation.z = Math.PI / 2; w.position.set(x, r, z); car.add(w); wheels.push(w);
-  }
-  car.userData.wheels = wheels;
-  return car;
-}
-const lead = makeCar(0x27f4d2); scene.add(lead);
-const chase = makeCar(0xff8000); scene.add(chase);
+const lead = buildCar("silver", { compound: "#f2f2f2", env: envMap }); scene.add(lead);
+const chase = buildCar("papaya", { compound: "#ffd400", env: envMap }); scene.add(chase);
 // The cars drive towards -z; in the cars' frame the air flows towards +z (backwards).
 
 // ---------------- wake particles (illustrative) ----------------
@@ -150,7 +160,10 @@ const pos = new Float32Array(N * 3), col = new Float32Array(N * 3), age = new Fl
 const geo = new THREE.BufferGeometry();
 geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
 geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
-const mat = new THREE.PointsMaterial({ size: 0.11, vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending });
+const dot = (() => { const c = document.createElement("canvas"); c.width = c.height = 32; const g = c.getContext("2d");
+  const r = g.createRadialGradient(16, 16, 0, 16, 16, 16); r.addColorStop(0, "#fff"); r.addColorStop(0.4, "#ffffffaa"); r.addColorStop(1, "#ffffff00");
+  g.fillStyle = r; g.fillRect(0, 0, 32, 32); return new THREE.CanvasTexture(c); })();
+const mat = new THREE.PointsMaterial({ map: dot, size: 0.13, vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending });
 scene.add(new THREE.Points(geo, mat));
 const MAXZ = 95;
 function spawn(i) {
@@ -160,14 +173,18 @@ function spawn(i) {
   if (r < 0.45) { const s = Math.random() < 0.5 ? -1 : 1; x = s * (0.5 + Math.random() * 0.08); y = 1.0 + Math.random() * 0.15; seed[i * 3] = s; }
   else if (r < 0.75) { x = (Math.random() - 0.5) * 0.9; y = 0.15 + Math.random() * 0.2; seed[i * 3] = 0; }
   else { const s = Math.random() < 0.5 ? -1 : 1; x = s * 0.85; y = 0.2 + Math.random() * 0.4; seed[i * 3] = 0; }
-  pos[i * 3] = x; pos[i * 3 + 1] = y; pos[i * 3 + 2] = 2.2 + Math.random() * 0.3;
+  pos[i * 3] = x; pos[i * 3 + 1] = y; pos[i * 3 + 2] = 2.45 + Math.random() * 0.3;
   seed[i * 3 + 1] = Math.random() * 6.28; seed[i * 3 + 2] = 0.6 + Math.random() * 0.8;
   age[i] = 0;
 }
 for (let i = 0; i < N; i++) { spawn(i); age[i] = Math.random() * 3; pos[i * 3 + 2] = 2.2 + Math.random() * MAXZ; }
 
 // ---------------- interaction ----------------
-let gap = +document.getElementById("gap").value, curve = curveFor("all");
+let gap = +document.getElementById("gap").value, curve = curveFor("all"), aero = "X";
+document.getElementById("aero").onclick = (e) => {
+  const b = e.target.closest("button"); if (!b) return; aero = b.dataset.m;
+  document.querySelectorAll("#aero button").forEach((x) => x.classList.toggle("on", x === b));
+};
 const toDist = (g) => 7 + g * 26;            // scene distance (compressed) for a time gap
 const toMetres = (g) => Math.round(g * 69);  // ≈ 250 km/h
 function updateHud() {
@@ -200,8 +217,15 @@ updateHud();
 chase.position.z = toDist(gap);  // start in place; later gap changes glide
 camera.position.set(-3.5, 9 + chase.position.z * 0.08, chase.position.z * 1.1 + 13);
 controls.target.set(1.5, 0.4, chase.position.z * 0.5);
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.3, 0.45, 0.95));
+composer.addPass(new OutputPass());
 const clock = new THREE.Clock();
 let autoOrbit = true;  // follow the cars until the user takes the camera
+// ?showroom: a slow turntable around the leading car (used for close-ups and the README images)
+const showroom = new URLSearchParams(location.search).has("showroom");
+if (showroom) { autoOrbit = false; document.querySelectorAll(".hud,.note,.top").forEach((e) => (e.style.display = "none")); }
 controls.addEventListener("start", () => { autoOrbit = false; });  // stop drifting once the user grabs the view
 const red = new THREE.Color(0xff5a1f), blue = new THREE.Color(0x3d8bff), hit = new THREE.Color(0xffffff);
 function frame() {
@@ -210,9 +234,10 @@ function frame() {
   chase.position.z += (dz - chase.position.z) * 0.08;
   chase.position.x = Math.sin(t * 0.7) * 0.25;  // the chasing car weaves a little in the wake
   chase.rotation.y = -Math.cos(t * 0.7) * 0.02;
-  for (const car of [lead, chase]) for (const w of car.userData.wheels) w.rotation.x += dt * 40;
+  for (const car of [lead, chase]) { for (const w of car.userData.wheels) w.rotation.x -= dt * 190; setAero(car, aero, 0.08); }
+  const wake = aero === "Z" ? 1.35 : 0.8;  // more downforce -> stronger, wider wake (illustrative)
   dashes.position.z = ((t * 70) % 8);
-  const fz = chase.position.z - 3.3, fx = chase.position.x;  // front wing of the chasing car
+  const fz = chase.position.z - 2.9, fx = chase.position.x;  // front wing of the chasing car
   for (let i = 0; i < N; i++) {
     const k = i * 3;
     age[i] += dt;
@@ -220,14 +245,15 @@ function frame() {
     const spread = 0.35 + 0.11 * Math.sqrt(Math.max(z, 0));     // the wake widens with distance
     const s = seed[k], ph = seed[k + 1], amp = seed[k + 2];
     pos[k + 2] += dt * (32 + 6 * amp);                             // carried backwards with the flow
+    const sp = spread * wake;
     if (s !== 0) {                                                 // tip vortex: spirals around its core
       const cx = s * (0.55 + 0.05 * z ** 0.6), cy = 1.0 + 0.03 * z;  // vortices drift outwards and upwards
-      const ang = ph + t * 6 * s + z * 0.25, rad = 0.12 + 0.02 * z ** 0.8;
+      const ang = ph + t * 6 * s + z * 0.25, rad = (0.12 + 0.02 * z ** 0.8) * wake;
       pos[k] += ((cx + Math.cos(ang) * rad) - pos[k]) * 0.2;
       pos[k + 1] += ((cy + Math.sin(ang) * rad) - pos[k + 1]) * 0.2;
     } else {                                                        // turbulent core: random walk that grows
-      pos[k] += (Math.sin(t * 3 + ph + z * 0.3) * spread * amp - pos[k]) * 0.04 + (Math.random() - 0.5) * 0.04 * spread;
-      pos[k + 1] = Math.max(0.05, pos[k + 1] + (Math.cos(t * 2.3 + ph + z * 0.21) * 0.6 * spread + 0.6 - pos[k + 1]) * 0.03);
+      pos[k] += (Math.sin(t * 3 + ph + z * 0.3) * sp * amp - pos[k]) * 0.04 + (Math.random() - 0.5) * 0.04 * sp;
+      pos[k + 1] = Math.max(0.05, pos[k + 1] + (Math.cos(t * 2.3 + ph + z * 0.21) * 0.6 * sp + 0.6 - pos[k + 1]) * 0.03);
     }
     const near = Math.abs(pos[k + 2] - fz) < 0.6 && Math.abs(pos[k] - fx) < 1.2 && pos[k + 1] < 0.8;
     const fade = Math.max(0, 1 - z / MAXZ);
@@ -236,17 +262,21 @@ function frame() {
     if (pos[k + 2] > MAXZ + 2.2 || pos[k + 2] > fz + 0.8 && Math.abs(pos[k] - fx) < 1 && pos[k + 1] < 1.2) spawn(i);
   }
   geo.attributes.position.needsUpdate = true; geo.attributes.color.needsUpdate = true;
-  if (autoOrbit) {  // chase cam: behind and above the following car, looking up the wake at the leader
+  if (showroom) {
+    const a = 0.9 + t * 0.12, r = 6.2;
+    camera.position.set(Math.sin(a) * r, 1.9, Math.cos(a) * r);
+    controls.target.set(0, 0.45, 0.1);
+  } else if (autoOrbit) {  // chase cam: behind and above the following car, looking up the wake at the leader
     const cz = chase.position.z;
     camera.position.lerp(new THREE.Vector3(-3.5, 9 + cz * 0.08, cz * 1.1 + 13), 0.05);
     controls.target.lerp(new THREE.Vector3(1.5, 0.4, cz * 0.5), 0.05);
   }
   controls.update();
-  renderer.render(scene, camera);
+  composer.render();
   requestAnimationFrame(frame);
 }
 frame();
-addEventListener("resize", () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+addEventListener("resize", () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight); });
 </script>
 </body>
 </html>
