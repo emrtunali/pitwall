@@ -269,8 +269,20 @@ All three are derived from raw timing. None of them is published by Formula 1 or
 3.40 m wheelbase, 1.90 m width, 18-inch wheels with the narrower 2026 tyres, a two-element front wing with an
 active flap, a three-element active rear wing with no beam wing and simplified endplates, halo, undercut
 sidepods, a partly flat floor and wing-endplate rain lights. Switching between **X-mode** (straight, low drag)
-and **Z-mode** (corners, high downforce) moves the wings. Rendering uses physically based clear-coat paint, a
-procedural carbon-weave texture, studio reflections, soft shadows and bloom.
+and **Z-mode** (corners, high downforce) moves the wings. The livery is painted into the body's UV map, and the
+car is lit by a real sky HDRI. Rendering uses clear-coat paint, a carbon-weave texture, 4K soft shadows and PBR
+asphalt. The HDRI and textures are CC0 assets from Poly Haven, credited in
+[`site/assets/CREDITS.md`](site/assets/CREDITS.md).
+
+**How the airflow is drawn** ([`site/wake.mjs`](site/wake.mjs)):
+- Seven thousand particles are advected through a wake model and drawn as velocity streaks, like smoke-wand
+  photos in a wind tunnel.
+- The wake model has a Gaussian velocity deficit that widens with distance and rises (upwash), two
+  counter-rotating rear-wing tip vortices (Lamb–Oseen), and turbulence where the deficit is strongest.
+- A heat-map slice with contour lines shows the wake exactly where the following car's front wing meets it.
+- **How fast the wake fades with distance is not made up.** It follows the measured lap-time-cost-vs-gap curve,
+  so in the scene the air is "clean" again at the same distance as in the data. The shape of the flow is an
+  illustration, not CFD.
 
 Liveries are colour schemes only, with no team or sponsor marks. The 2026 car models available online are
 paid or editorial-only and cannot be redistributed in an open-source repo, so the car is built from the

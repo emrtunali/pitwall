@@ -4,64 +4,73 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dirty Air Lab · Pitwall</title>
-<meta name="description" content="3D view of the wake behind a Formula 1 car, with the lap time a following car actually loses at each gap, measured from 2026 race data.">
+<meta name="description" content="3D wake behind a 2026 Formula 1 car, with the lap time a following car actually loses at each gap, measured from 2026 race data.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23e10600'/></svg>">
 <style>
-  :root { --ink:#eef0f3; --muted:#8b93a1; --panel:#0e1116cc; --line:#2a2f38; --accent:#e10600; }
+  :root { --ink:#eef0f3; --muted:#9aa3b2; --panel:#0c0f14d9; --line:#2a2f38; --accent:#e10600; }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; background: #07090c; color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
+  html, body { margin: 0; height: 100%; background: #0b0e13; color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
   #scene { position: fixed; inset: 0; }
-  .top { position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 14px; padding: 12px 18px; background: linear-gradient(#07090ce6, #07090c00); z-index: 2; }
+  .top { position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 14px; padding: 12px 18px; background: linear-gradient(#0b0e13cc, #0b0e1300); z-index: 2; }
   .top a { color: var(--muted); text-decoration: none; font-weight: 600; }
   .top b { font-size: 17px; }
-  .hud { position: fixed; left: 18px; bottom: 18px; width: min(440px, calc(100vw - 32px)); background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; backdrop-filter: blur(10px); z-index: 2; }
-  .big { font-size: 38px; font-weight: 800; font-family: ui-monospace, Menlo, monospace; letter-spacing: -1px; }
+  .hud { position: fixed; left: 18px; bottom: 18px; width: min(430px, calc(100vw - 32px)); background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; backdrop-filter: blur(12px); z-index: 2; }
+  .big { font-size: 36px; font-weight: 800; font-family: ui-monospace, Menlo, monospace; letter-spacing: -1px; }
   .big small { font-size: 15px; color: var(--muted); font-weight: 600; letter-spacing: 0; }
   .muted { color: var(--muted); font-size: 12.5px; }
-  label { display: block; color: var(--muted); font-size: 12px; margin: 12px 0 4px; }
+  label { display: block; color: var(--muted); font-size: 12px; margin: 10px 0 4px; }
   input[type=range] { width: 100%; accent-color: var(--accent); }
   select { width: 100%; background: #161a21; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; }
   .row { display: flex; justify-content: space-between; align-items: baseline; }
   .seg { display: flex; gap: 4px; background: #161a21; border-radius: 9px; padding: 3px; }
   .seg button { flex: 1; border: 0; background: none; color: var(--muted); font: 600 12px system-ui; padding: 6px; border-radius: 7px; cursor: pointer; }
   .seg button.on { background: #ffffff1c; color: var(--ink); }
-  svg { width: 100%; height: 110px; display: block; margin-top: 10px; }
+  svg { width: 100%; height: 96px; display: block; margin-top: 8px; }
+  .legend { position: fixed; right: 18px; top: 64px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; font-size: 12px; color: var(--muted); z-index: 2; width: 230px; }
+  .legend .bar { height: 8px; border-radius: 4px; background: linear-gradient(90deg, #6ec6ff, #ffe066, #ff7a1a, #ff1f3d); margin: 6px 0 2px; }
   .note { position: fixed; right: 18px; bottom: 18px; max-width: 330px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; font-size: 12px; color: var(--muted); z-index: 2; }
-  @media (max-width: 760px) { .note { display: none; } .big { font-size: 30px; } .hud { padding: 12px 14px; } }
+  @media (max-width: 860px) { .note, .legend { display: none; } .big { font-size: 28px; } }
 </style>
 <script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }</script>
 </head>
 <body>
 <div id="scene"></div>
 <div class="top"><a href="./">← Pitwall</a><b>Dirty Air Lab</b><span class="muted" id="sub"></span></div>
+<div class="legend">
+  <b style="color:var(--ink)">Air reaching the car behind</b>
+  <div class="bar"></div>
+  <div class="row"><span>clean</span><span>turbulent, slower</span></div>
+  <div style="margin-top:6px">Streaks follow the flow. The glowing slice is the wake where the following car's front wing meets it.</div>
+</div>
 <div class="hud">
   <div class="row"><span class="muted">Measured cost of following at this gap</span><span class="muted" id="laps"></span></div>
   <div class="big" id="cost">–</div>
   <div class="muted" id="explain"></div>
   <label for="gap">Gap to the car ahead: <b id="gapv"></b></label>
-  <input id="gap" type="range" min="0.25" max="3" step="0.05" value="0.7">
-  <label>2026 active aero <span class="muted">(illustrative: wings move, wake strength changes)</span></label>
-  <div class="seg" id="aero"><button data-m="X" class="on">X-mode · straight, low drag</button><button data-m="Z">Z-mode · corner, high downforce</button></div>
+  <input id="gap" type="range" min="0.25" max="3" step="0.05" value="0.6">
+  <label>2026 active aero</label>
+  <div class="seg" id="aero"><button data-m="Z" class="on">Z-mode · corners</button><button data-m="X">X-mode · straights</button></div>
   <label for="circuit">Circuit</label>
   <select id="circuit"></select>
-  <svg id="curve" viewBox="0 0 400 110" preserveAspectRatio="none"></svg>
+  <svg id="curve" viewBox="0 0 400 96" preserveAspectRatio="none"></svg>
 </div>
 <div class="note">
-  <b style="color:var(--ink)">What is real here.</b> The lap-time numbers and the curve are measured from 2026 timing data. They are the race-pace
-  model's residual on laps run at that gap, compared with laps in clean air (more than 3 s), after removing tyres, fuel and driver pace.
-  The airflow is an <i>illustration</i> of the wake (rear-wing tip vortices and a widening turbulent region), not a CFD simulation.
+  <b style="color:var(--ink)">What is real here.</b> The lap-time numbers, the curve, and how fast the wake fades with distance are measured
+  from 2026 timing data (the race-pace model's residual at each gap, compared with clean air). The shape of the airflow (tip vortices, upwash,
+  turbulence) is a physically motivated illustration, not a CFD result. Car modelled to the 2026 regulations; no team marks.
 </div>
 <script type="module">
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { RGBELoader } from "three/addons/loaders/RGBELoader.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { buildCar, setAero } from "./car2026.mjs";
+import { sample, SOURCE_Z, WAKE_GLSL } from "./wake.mjs";
 
-// ---------------- data: measured cost per gap bin ----------------
+// ---------------- measured data: lap-time cost per gap band ----------------
 const index = await (await fetch("data/2026/index.json")).json();
 const races = index.races.filter((r) => r.dirty_air_curve?.bins?.length);
 const BIN_MID = [0.25, 0.75, 1.25, 1.75, 2.5];
@@ -72,210 +81,236 @@ function curveFor(slug) {
   return BIN_MID.map((g, i) => ({ g, cost: n[i] ? sum[i] / n[i] : null, n: n[i] }));
 }
 function costAt(curve, gap) {
-  if (gap >= 3) return { cost: 0, n: null };
   const pts = curve.filter((p) => p.cost != null);
+  if (gap >= 3) return { cost: Math.max(0, pts.at(-1).cost), n: null };
   if (gap <= pts[0].g) return pts[0];
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i], b = pts[i + 1];
     if (gap <= b.g) { const f = (gap - a.g) / (b.g - a.g); return { cost: a.cost + f * (b.cost - a.cost), n: f < 0.5 ? a.n : b.n }; }
   }
-  return pts[pts.length - 1];
+  return pts.at(-1);
 }
 const sel = document.getElementById("circuit");
-sel.innerHTML = `<option value="all">All 2026 circuits (pooled)</option>` +
-  [...races].sort((a, b) => (b.dirty_air?.cost ?? 0) - (a.dirty_air?.cost ?? 0))
-    .map((r) => `<option value="${r.slug}">${r.circuit} · ${r.dirty_air?.cost != null ? r.dirty_air.cost.toFixed(2) + " s/lap within 1 s" : ""}</option>`).join("");
+sel.innerHTML = `<option value="all">All 2026 circuits (pooled)</option>` + [...races]
+  .sort((a, b) => (b.dirty_air?.cost ?? 0) - (a.dirty_air?.cost ?? 0))
+  .map((r) => `<option value="${r.slug}">${r.circuit}${r.dirty_air?.cost != null ? ` · ${r.dirty_air.cost.toFixed(2)} s/lap within 1 s` : ""}</option>`).join("");
 document.getElementById("sub").textContent = `${races.length} races · data ${index.updated_at?.slice(0, 10) ?? ""}`;
 
-// ---------------- three.js scene ----------------
+// ---------------- renderer, sky, lighting ----------------
 const host = document.getElementById("scene");
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.85;
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 host.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
-{ // dusk sky gradient
-  const c = document.createElement("canvas"); c.width = 2; c.height = 256; const g = c.getContext("2d");
-  const grad = g.createLinearGradient(0, 0, 0, 256);
-  grad.addColorStop(0, "#0b1322"); grad.addColorStop(0.45, "#22355a"); grad.addColorStop(0.7, "#56607a"); grad.addColorStop(0.85, "#8a7f86"); grad.addColorStop(1, "#1a1d24");
-  g.fillStyle = grad; g.fillRect(0, 0, 2, 256);
-  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; scene.background = tex;
-}
-scene.fog = new THREE.Fog(0x1a2233, 60, 170);
-const pmrem = new THREE.PMREMGenerator(renderer);
-const envMap = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;  // studio reflections on the paint
-scene.environment = envMap;
-const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
-camera.position.set(-19, 12, -4);
+const camera = new THREE.PerspectiveCamera(38, innerWidth / innerHeight, 0.1, 900);
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(3, 0, 16);
-controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.49; controls.minDistance = 8; controls.maxDistance = 90;
-scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x101318, 0.6));
-const sun = new THREE.DirectionalLight(0xfff1dc, 2.6); sun.position.set(-14, 22, -8);
-sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004;
-Object.assign(sun.shadow.camera, { left: -12, right: 12, top: 40, bottom: -10, near: 1, far: 80 });
-sun.target.position.set(0, 0, 14); scene.add(sun, sun.target);
+controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.495; controls.minDistance = 4; controls.maxDistance = 120;
 
-// track: asphalt, kerbs and dashed lines that scroll to suggest ~250 km/h
-function noiseTexture(base, spread, size = 256, repeat = [4, 60]) {
-  const c = document.createElement("canvas"); c.width = c.height = size; const g = c.getContext("2d");
-  const img = g.createImageData(size, size);
-  for (let i = 0; i < size * size; i++) { const v = base + (Math.random() - 0.5) * spread; img.data.set([v, v, v + 2, 255], i * 4); }
-  g.putImageData(img, 0, 0);
-  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(...repeat); t.colorSpace = THREE.SRGBColorSpace; return t;
+// image-based lighting and sky from a CC0 HDRI (Poly Haven, see assets/CREDITS.md)
+const hdr = await new RGBELoader().loadAsync("assets/kloofendal_48d_partly_cloudy_puresky_1k.hdr");
+hdr.mapping = THREE.EquirectangularReflectionMapping;
+scene.environment = hdr; scene.background = hdr;
+scene.backgroundBlurriness = 0.02; scene.environmentIntensity = 0.9;
+scene.fog = new THREE.Fog(0xb9c6d6, 90, 260);
+const sun = new THREE.DirectionalLight(0xfff2e0, 3.0);
+sun.position.set(-16, 26, -10); sun.castShadow = true; sun.shadow.mapSize.set(4096, 4096); sun.shadow.bias = -0.0003; sun.shadow.normalBias = 0.02;
+Object.assign(sun.shadow.camera, { left: -8, right: 8, top: 45, bottom: -8, near: 1, far: 90 });
+sun.target.position.set(0, 0, 16); scene.add(sun, sun.target);
+
+// ---------------- track: PBR asphalt (CC0), kerbs, grass, barriers ----------------
+const tl = new THREE.TextureLoader();
+function tex(file, repeat, srgb = false) {
+  const t = tl.load(`assets/${file}`); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(...repeat);
+  t.anisotropy = renderer.capabilities.getMaxAnisotropy(); if (srgb) t.colorSpace = THREE.SRGBColorSpace; return t;
 }
-const asphalt = new THREE.Mesh(new THREE.PlaneGeometry(26, 400), new THREE.MeshStandardMaterial({ map: noiseTexture(38, 26), roughness: 0.9 }));
-asphalt.rotation.x = -Math.PI / 2; asphalt.position.z = 60; asphalt.receiveShadow = true; scene.add(asphalt);
-for (const s of [-1, 1]) {  // grass, run-off and barriers either side
-  const grass = new THREE.Mesh(new THREE.PlaneGeometry(60, 400), new THREE.MeshStandardMaterial({ color: 0x14261a, roughness: 1 }));
-  grass.rotation.x = -Math.PI / 2; grass.position.set(s * 43, -0.01, 60); scene.add(grass);
-  const wall = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.1, 400), new THREE.MeshStandardMaterial({ color: 0x2a2f38, roughness: 0.7 }));
-  wall.position.set(s * 19, 0.55, 60); wall.castShadow = wall.receiveShadow = true; scene.add(wall);
-  const band = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.25, 400), new THREE.MeshStandardMaterial({ color: 0xe10600, roughness: 0.5 }));
-  band.position.set(s * 19, 0.85, 60); scene.add(band);
+const asphaltMat = new THREE.MeshStandardMaterial({
+  map: tex("asphalt_track_diff_1k.jpg", [3, 50], true), normalMap: tex("asphalt_track_nor_gl_1k.jpg", [3, 50]),
+  roughnessMap: tex("asphalt_track_rough_1k.jpg", [3, 50]), roughness: 1, color: 0x9a9a9a,
+});
+const road = new THREE.Mesh(new THREE.PlaneGeometry(16, 600), asphaltMat);
+road.rotation.x = -Math.PI / 2; road.position.z = 120; road.receiveShadow = true; scene.add(road);
+const scroll = new THREE.Group(); scene.add(scroll); // track furniture that streams past at speed
+const grassMat = new THREE.MeshStandardMaterial({ map: tex("aerial_grass_rock_diff_1k.jpg", [8, 90], true), roughness: 1, color: 0x8fa58a });
+for (const s of [-1, 1]) {
+  const grass = new THREE.Mesh(new THREE.PlaneGeometry(80, 600), grassMat);
+  grass.rotation.x = -Math.PI / 2; grass.position.set(s * 48, -0.02, 120); grass.receiveShadow = true; scene.add(grass);
+  const runoff = new THREE.Mesh(new THREE.PlaneGeometry(6, 600), new THREE.MeshStandardMaterial({ color: 0x3d4250, roughness: 0.95 }));
+  runoff.rotation.x = -Math.PI / 2; runoff.position.set(s * 11, -0.01, 120); scene.add(runoff);
 }
-const dashes = new THREE.Group();
-for (let i = 0; i < 40; i++) {
-  for (const x of [-6, 6]) {
-    const d = new THREE.Mesh(new THREE.PlaneGeometry(0.25, 3), new THREE.MeshBasicMaterial({ color: 0x3a3f48 }));
-    d.rotation.x = -Math.PI / 2; d.position.set(x, 0.01, -100 + i * 8); dashes.add(d);
+const kerbRed = new THREE.MeshStandardMaterial({ color: 0xd8161b, roughness: 0.6 }), kerbWhite = new THREE.MeshStandardMaterial({ color: 0xf1f1f1, roughness: 0.6 });
+const lineMat = new THREE.MeshStandardMaterial({ color: 0xf4f4f4, roughness: 0.7 });
+for (let i = 0; i < 75; i++) {
+  const z = -60 + i * 4;
+  for (const s of [-1, 1]) {
+    const kerb = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.05, 2), i % 2 ? kerbRed : kerbWhite);
+    kerb.position.set(s * 8.6, 0.02, z); kerb.receiveShadow = true; scroll.add(kerb);
+    const line = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 4), lineMat); line.rotation.x = -Math.PI / 2; line.position.set(s * 7.85, 0.006, z); scroll.add(line);
   }
-  for (const x of [-12.6, 12.6]) {
-    const k = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 4), new THREE.MeshBasicMaterial({ color: i % 2 ? 0xe10600 : 0xf2f2f2 }));
-    k.rotation.x = -Math.PI / 2; k.position.set(x, 0.012, -100 + i * 8); dashes.add(k);
+  if (i % 6 === 0) for (const s of [-1, 1]) {   // advertising boards (blank)
+    const board = new THREE.Mesh(new THREE.BoxGeometry(0.15, 1.0, 3.9), new THREE.MeshStandardMaterial({ color: i % 12 ? 0x1a2e5a : 0xe10600, roughness: 0.5 }));
+    board.position.set(s * 14.5, 0.5, z); board.castShadow = true; scroll.add(board);
   }
 }
-scene.add(dashes);
-
-const lead = buildCar("silver", { compound: "#f2f2f2", env: envMap }); scene.add(lead);
-const chase = buildCar("papaya", { compound: "#ffd400", env: envMap }); scene.add(chase);
-// The cars drive towards -z; in the cars' frame the air flows towards +z (backwards).
-
-// ---------------- wake particles (illustrative) ----------------
-const N = 9000;
-const pos = new Float32Array(N * 3), col = new Float32Array(N * 3), age = new Float32Array(N), seed = new Float32Array(N * 3);
-const geo = new THREE.BufferGeometry();
-geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
-const dot = (() => { const c = document.createElement("canvas"); c.width = c.height = 32; const g = c.getContext("2d");
-  const r = g.createRadialGradient(16, 16, 0, 16, 16, 16); r.addColorStop(0, "#fff"); r.addColorStop(0.4, "#ffffffaa"); r.addColorStop(1, "#ffffff00");
-  g.fillStyle = r; g.fillRect(0, 0, 32, 32); return new THREE.CanvasTexture(c); })();
-const mat = new THREE.PointsMaterial({ map: dot, size: 0.13, vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending });
-scene.add(new THREE.Points(geo, mat));
-const MAXZ = 95;
-function spawn(i) {
-  // emitted from the rear wing tips (vortices), the diffuser and the wheels
-  const r = Math.random();
-  let x, y;
-  if (r < 0.45) { const s = Math.random() < 0.5 ? -1 : 1; x = s * (0.5 + Math.random() * 0.08); y = 1.0 + Math.random() * 0.15; seed[i * 3] = s; }
-  else if (r < 0.75) { x = (Math.random() - 0.5) * 0.9; y = 0.15 + Math.random() * 0.2; seed[i * 3] = 0; }
-  else { const s = Math.random() < 0.5 ? -1 : 1; x = s * 0.85; y = 0.2 + Math.random() * 0.4; seed[i * 3] = 0; }
-  pos[i * 3] = x; pos[i * 3 + 1] = y; pos[i * 3 + 2] = 2.45 + Math.random() * 0.3;
-  seed[i * 3 + 1] = Math.random() * 6.28; seed[i * 3 + 2] = 0.6 + Math.random() * 0.8;
-  age[i] = 0;
+for (const s of [-1, 1]) {
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.0, 600), new THREE.MeshStandardMaterial({ color: 0xcfd3d8, roughness: 0.8 }));
+  wall.position.set(s * 14.8, 0.5, 120); wall.castShadow = wall.receiveShadow = true; scene.add(wall);
+  const fence = new THREE.Mesh(new THREE.PlaneGeometry(600, 3), new THREE.MeshStandardMaterial({ color: 0x333a44, transparent: true, opacity: 0.35, side: THREE.DoubleSide }));
+  fence.rotation.y = Math.PI / 2; fence.position.set(s * 15, 2.5, 120); scene.add(fence);
 }
-for (let i = 0; i < N; i++) { spawn(i); age[i] = Math.random() * 3; pos[i * 3 + 2] = 2.2 + Math.random() * MAXZ; }
+
+// ---------------- cars ----------------
+const lead = buildCar("silver", { compound: "#f2f2f2" }); scene.add(lead);
+const chase = buildCar("papaya", { compound: "#ffd400" }); scene.add(chase);
+
+// ---------------- flow streaks ----------------
+// Particles are seeded upstream and at the car's trailing edges, then advected through the wake field;
+// each is drawn as a short streak along its velocity (like smoke-wand photos in a wind tunnel).
+const N = 7000, SPEED = 34; // scene units per second
+const P = new Float32Array(N * 3), age = new Float32Array(N), life = new Float32Array(N);
+const lineGeo = new THREE.BufferGeometry();
+const lp = new Float32Array(N * 6), lc = new Float32Array(N * 6);
+lineGeo.setAttribute("position", new THREE.BufferAttribute(lp, 3));
+lineGeo.setAttribute("color", new THREE.BufferAttribute(lc, 3));
+const streaks = new THREE.LineSegments(lineGeo, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending }));
+streaks.frustumCulled = false; scene.add(streaks);
+function seed(i, anywhere = false) {
+  const k = i * 3;
+  if (Math.random() < 0.55) {           // released from the trailing edges: wing tips, diffuser, rear tyres
+    const src = Math.random();
+    if (src < 0.4) { const s = Math.random() < 0.5 ? -1 : 1; P[k] = s * (0.5 + (Math.random() - 0.5) * 0.06); P[k + 1] = 0.95 + Math.random() * 0.12; }
+    else if (src < 0.75) { P[k] = (Math.random() - 0.5) * 0.9; P[k + 1] = 0.1 + Math.random() * 0.25; }
+    else { const s = Math.random() < 0.5 ? -1 : 1; P[k] = s * (0.8 + Math.random() * 0.1); P[k + 1] = 0.1 + Math.random() * 0.55; }
+    P[k + 2] = SOURCE_Z + Math.random() * 0.2;
+  } else {                              // ambient free stream around the car
+    P[k] = (Math.random() - 0.5) * 3.6; P[k + 1] = 0.05 + Math.random() * 1.7; P[k + 2] = -4 + Math.random() * 2;
+  }
+  if (anywhere) P[k + 2] += Math.random() * 30;
+  age[i] = 0; life[i] = 2 + Math.random() * 2.5;
+}
+for (let i = 0; i < N; i++) seed(i, true);
+
+// ---------------- wake cross-section at the following car's front wing ----------------
+const sliceMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.NormalBlending, toneMapped: false,
+  uniforms: { d: { value: 10 }, amp: { value: 1 }, k: { value: 1.25 }, t: { value: 0 } },
+  vertexShader: `varying vec2 vP; void main() { vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform float d, amp, k, t; varying vec2 vP; ${WAKE_GLSL}
+    vec3 ramp(float x) { return x < 0.33 ? mix(vec3(0.43,0.78,1.0), vec3(1.0,0.88,0.4), x/0.33)
+      : x < 0.66 ? mix(vec3(1.0,0.88,0.4), vec3(1.0,0.48,0.1), (x-0.33)/0.33) : mix(vec3(1.0,0.48,0.1), vec3(1.0,0.12,0.24), (x-0.66)/0.34); }
+    void main() {
+      float w = clamp(wakeIntensity(vec2(vP.x, vP.y + 1.1), d, amp, k, t), 0.0, 1.0);
+      float contour = smoothstep(0.03, 0.0, abs(fract(w * 6.0) - 0.5) - 0.46) * step(0.08, w);
+      float edge = smoothstep(2.2, 1.6, abs(vP.x)) * smoothstep(-1.15, -0.95, vP.y) * smoothstep(1.2, 0.9, vP.y);
+      float alpha = smoothstep(0.08, 0.6, w) * 0.62 * edge;  // transparent where the air is clean
+      gl_FragColor = vec4(ramp(w) * 0.92 + contour * 0.2, alpha + contour * 0.25 * edge);
+    }`,
+});
+const slice = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 2.3, 1, 1), sliceMat); scene.add(slice);
+slice.add(new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(4.4, 2.3)), new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.25 })));
 
 // ---------------- interaction ----------------
-let gap = +document.getElementById("gap").value, curve = curveFor("all"), aero = "X";
-document.getElementById("aero").onclick = (e) => {
-  const b = e.target.closest("button"); if (!b) return; aero = b.dataset.m;
-  document.querySelectorAll("#aero button").forEach((x) => x.classList.toggle("on", x === b));
-};
-const toDist = (g) => 7 + g * 26;            // scene distance (compressed) for a time gap
-const toMetres = (g) => Math.round(g * 69);  // ≈ 250 km/h
+let gap = +document.getElementById("gap").value, curve = curveFor("all"), aero = "Z";
+const toDist = (g) => 6 + g * 24;          // compressed scene distance for a time gap
+const toGap = (dz) => Math.max(0, (dz - 6) / 24);
+const toMetres = (g) => Math.round(g * 69); // ≈ 250 km/h
+let ampNear = 1;
+// wake strength along the track follows the measured cost-vs-gap curve, normalised to the closest band
+const envelope = (d) => Math.max(0, costAt(curve, Math.max(0.25, toGap(d + SOURCE_Z + 3.3))).cost) / ampNear;
 function updateHud() {
+  ampNear = Math.max(0.05, costAt(curve, 0.25).cost);
   const c = costAt(curve, gap);
   document.getElementById("gapv").textContent = `${gap.toFixed(2)} s  (≈ ${toMetres(gap)} m at 250 km/h)`;
-  document.getElementById("cost").innerHTML = c.cost == null ? "–" : `${c.cost >= 0 ? "+" : ""}${c.cost.toFixed(2)} <small>s / lap</small>`;
-  document.getElementById("laps").textContent = c.n ? `${c.n} laps in this gap band` : "";
+  document.getElementById("cost").innerHTML = `${c.cost >= 0 ? "+" : ""}${c.cost.toFixed(2)} <small>s / lap</small>`;
+  document.getElementById("laps").textContent = c.n ? `${c.n.toLocaleString()} laps in this gap band` : "";
   document.getElementById("explain").textContent = gap > 1.5
-    ? "Beyond about 1.5 s the measured cost is indistinguishable from clean air."
-    : "Turbulent, slower air reaches the following car's front wing: it loses grip in corners and slides its tyres.";
+    ? "Beyond about 1.5 s the measured cost is indistinguishable from clean air: the wake has mixed out."
+    : "Slower, turbulent air from the car ahead reaches the front wing: less downforce, more sliding, hotter tyres.";
   drawCurve();
 }
 function drawCurve() {
-  const svg = document.getElementById("curve"), W = 400, H = 110, pad = 18;
+  const svg = document.getElementById("curve"), W = 400, H = 96, pad = 16;
   const pts = curve.filter((p) => p.cost != null);
   const max = Math.max(0.3, ...pts.map((p) => p.cost)), min = Math.min(-0.1, ...pts.map((p) => p.cost));
   const X = (g) => pad + (g / 3) * (W - 2 * pad), Y = (v) => H - pad - ((v - min) / (max - min)) * (H - 2 * pad);
   svg.innerHTML = `<line x1="${pad}" x2="${W - pad}" y1="${Y(0)}" y2="${Y(0)}" stroke="#ffffff30"/>` +
-    `<polyline fill="none" stroke="#e10600" stroke-width="2.5" points="${pts.map((p) => `${X(p.g)},${Y(p.cost)}`).join(" ")} ${X(3)},${Y(0)}"/>` +
+    `<polyline fill="none" stroke="#e10600" stroke-width="2.5" points="${pts.map((p) => `${X(p.g)},${Y(p.cost)}`).join(" ")}"/>` +
     pts.map((p) => `<circle cx="${X(p.g)}" cy="${Y(p.cost)}" r="3.5" fill="#e10600"/>`).join("") +
-    `<line x1="${X(gap)}" x2="${X(gap)}" y1="${pad / 2}" y2="${H - pad}" stroke="#fff" stroke-dasharray="3 3"/>` +
-    [0, 1, 2, 3].map((g) => `<text x="${X(g)}" y="${H - 3}" fill="#8b93a1" font-size="10" text-anchor="middle">${g}s</text>`).join("") +
-    `<text x="${pad}" y="11" fill="#8b93a1" font-size="10">extra s/lap vs clean air</text>`;
+    `<line x1="${X(gap)}" x2="${X(gap)}" y1="4" y2="${H - pad}" stroke="#fff" stroke-dasharray="3 3"/>` +
+    [0, 1, 2, 3].map((g) => `<text x="${X(g)}" y="${H - 2}" fill="#9aa3b2" font-size="10" text-anchor="middle">${g}s</text>`).join("") +
+    `<text x="${pad}" y="10" fill="#9aa3b2" font-size="10">measured extra s/lap vs clean air</text>`;
 }
 document.getElementById("gap").oninput = (e) => { gap = +e.target.value; updateHud(); };
+document.getElementById("aero").onclick = (e) => {
+  const b = e.target.closest("button"); if (!b) return; aero = b.dataset.m;
+  document.querySelectorAll("#aero button").forEach((x) => x.classList.toggle("on", x === b));
+};
 sel.onchange = () => { curve = curveFor(sel.value); updateHud(); };
 updateHud();
 
-// ---------------- animation ----------------
-chase.position.z = toDist(gap);  // start in place; later gap changes glide
-camera.position.set(-3.5, 9 + chase.position.z * 0.08, chase.position.z * 1.1 + 13);
-controls.target.set(1.5, 0.4, chase.position.z * 0.5);
+// ---------------- camera ----------------
+const showroom = new URLSearchParams(location.search).has("showroom");
+if (showroom) document.querySelectorAll(".hud,.note,.top,.legend").forEach((e) => (e.style.display = "none"));
+let follow = !showroom;
+controls.addEventListener("start", () => { follow = false; });
+chase.position.z = toDist(gap);
+camera.position.set(-4.5, 3.4, chase.position.z + 9); controls.target.set(0.4, 0.5, chase.position.z * 0.45);
+
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.3, 0.45, 0.95));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.25, 0.4, 0.9));
 composer.addPass(new OutputPass());
+
+// ---------------- animation ----------------
 const clock = new THREE.Clock();
-let autoOrbit = true;  // follow the cars until the user takes the camera
-// ?showroom: a slow turntable around the leading car (used for close-ups and the README images)
-const showroom = new URLSearchParams(location.search).has("showroom");
-if (showroom) { autoOrbit = false; document.querySelectorAll(".hud,.note,.top").forEach((e) => (e.style.display = "none")); }
-controls.addEventListener("start", () => { autoOrbit = false; });  // stop drifting once the user grabs the view
-const red = new THREE.Color(0xff5a1f), blue = new THREE.Color(0x3d8bff), hit = new THREE.Color(0xffffff);
-function frame() {
+const cClean = new THREE.Color(0x6ec6ff), cMid = new THREE.Color(0xffe066), cHot = new THREE.Color(0xff3d2e), tmp = new THREE.Color();
+const still = { u: 1, vx: 0, vy: 0, deficit: 0, turb: 0 };
+function animate() {
   const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
-  const dz = toDist(gap);
-  chase.position.z += (dz - chase.position.z) * 0.08;
-  chase.position.x = Math.sin(t * 0.7) * 0.25;  // the chasing car weaves a little in the wake
-  chase.rotation.y = -Math.cos(t * 0.7) * 0.02;
-  for (const car of [lead, chase]) { for (const w of car.userData.wheels) w.rotation.x -= dt * 190; setAero(car, aero, 0.08); }
-  const wake = aero === "Z" ? 1.35 : 0.8;  // more downforce -> stronger, wider wake (illustrative)
-  dashes.position.z = ((t * 70) % 8);
-  const fz = chase.position.z - 2.9, fx = chase.position.x;  // front wing of the chasing car
+  chase.position.z += (toDist(gap) - chase.position.z) * 0.06;
+  chase.position.x = Math.sin(t * 0.6) * 0.18;   // the following car weaves slightly in the wake
+  chase.rotation.y = -Math.cos(t * 0.6) * 0.015;
+  for (const car of [lead, chase]) { for (const w of car.userData.wheels) w.rotation.x -= dt * SPEED / 0.36; setAero(car, aero, 0.06); }
+  scroll.position.z = -((t * SPEED) % 4);
+  const k = aero === "Z" ? 1.25 : 0.8;
   for (let i = 0; i < N; i++) {
-    const k = i * 3;
-    age[i] += dt;
-    const z = pos[k + 2] - 2.2;
-    const spread = 0.35 + 0.11 * Math.sqrt(Math.max(z, 0));     // the wake widens with distance
-    const s = seed[k], ph = seed[k + 1], amp = seed[k + 2];
-    pos[k + 2] += dt * (32 + 6 * amp);                             // carried backwards with the flow
-    const sp = spread * wake;
-    if (s !== 0) {                                                 // tip vortex: spirals around its core
-      const cx = s * (0.55 + 0.05 * z ** 0.6), cy = 1.0 + 0.03 * z;  // vortices drift outwards and upwards
-      const ang = ph + t * 6 * s + z * 0.25, rad = (0.12 + 0.02 * z ** 0.8) * wake;
-      pos[k] += ((cx + Math.cos(ang) * rad) - pos[k]) * 0.2;
-      pos[k + 1] += ((cy + Math.sin(ang) * rad) - pos[k + 1]) * 0.2;
-    } else {                                                        // turbulent core: random walk that grows
-      pos[k] += (Math.sin(t * 3 + ph + z * 0.3) * sp * amp - pos[k]) * 0.04 + (Math.random() - 0.5) * 0.04 * sp;
-      pos[k + 1] = Math.max(0.05, pos[k + 1] + (Math.cos(t * 2.3 + ph + z * 0.21) * 0.6 * sp + 0.6 - pos[k + 1]) * 0.03);
-    }
-    const near = Math.abs(pos[k + 2] - fz) < 0.6 && Math.abs(pos[k] - fx) < 1.2 && pos[k + 1] < 0.8;
-    const fade = Math.max(0, 1 - z / MAXZ);
-    const c = near && gap < 1.5 ? hit : red.clone().lerp(blue, Math.min(1, z / 40));
-    col[k] = c.r * fade; col[k + 1] = c.g * fade; col[k + 2] = c.b * fade;
-    if (pos[k + 2] > MAXZ + 2.2 || pos[k + 2] > fz + 0.8 && Math.abs(pos[k] - fx) < 1 && pos[k + 1] < 1.2) spawn(i);
+    const j = i * 3;
+    let x = P[j], y = P[j + 1], z = P[j + 2];
+    const d = z - SOURCE_Z;
+    const f = d > 0 ? sample(x, y, d, envelope(d), aero, t) : still;
+    if (d < 0 && Math.abs(x) < 1.1 && y < 1.1) { x += Math.sign(x || 1) * dt * 0.8; y += dt * 0.5; } // flow parts around the car
+    const vx = f.vx * SPEED * 0.12, vy = f.vy * SPEED * 0.12, vz = f.u * SPEED;
+    x += vx * dt; y = Math.max(0.03, y + vy * dt); z += vz * dt;
+    P[j] = x; P[j + 1] = y; P[j + 2] = z; age[i] += dt;
+    const L = 0.022, o = i * 6; // streak from the current point back along the velocity
+    lp[o] = x; lp[o + 1] = y; lp[o + 2] = z; lp[o + 3] = x - vx * L; lp[o + 4] = y - vy * L; lp[o + 5] = z - vz * L;
+    const heat = Math.min(1, f.deficit * 2.2 + f.turb * 0.9);
+    if (heat < 0.5) tmp.copy(cClean).lerp(cMid, heat * 2); else tmp.copy(cMid).lerp(cHot, (heat - 0.5) * 2);
+    const fade = Math.min(1, age[i] * 3) * Math.max(0, 1 - age[i] / life[i]) * (0.25 + 0.75 * Math.min(1, heat * 3 + 0.15));
+    for (const q of [0, 3]) { lc[o + q] = tmp.r * fade; lc[o + q + 1] = tmp.g * fade; lc[o + q + 2] = tmp.b * fade; }
+    const hitsChase = Math.abs(z - (chase.position.z - 3.1)) < 0.4 && Math.abs(x - chase.position.x) < 0.95 && y < 0.95;
+    // only the air between the two cars matters here: recycle anything that passes the car behind
+    if (age[i] > life[i] || z > chase.position.z - 2.6 || hitsChase) seed(i);
   }
-  geo.attributes.position.needsUpdate = true; geo.attributes.color.needsUpdate = true;
+  lineGeo.attributes.position.needsUpdate = true; lineGeo.attributes.color.needsUpdate = true;
+  const dz = chase.position.z - 3.3; // the slice sits just ahead of the following car's front wing
+  slice.position.set(chase.position.x, 1.1, dz);
+  sliceMat.uniforms.d.value = dz - SOURCE_Z; sliceMat.uniforms.amp.value = envelope(dz - SOURCE_Z);
+  sliceMat.uniforms.k.value = k; sliceMat.uniforms.t.value = t;
   if (showroom) {
-    const a = 0.9 + t * 0.12, r = 6.2;
-    camera.position.set(Math.sin(a) * r, 1.9, Math.cos(a) * r);
-    controls.target.set(0, 0.45, 0.1);
-  } else if (autoOrbit) {  // chase cam: behind and above the following car, looking up the wake at the leader
+    const a = 0.9 + t * 0.1; camera.position.set(Math.sin(a) * 6.4, 1.6, Math.cos(a) * 6.4); controls.target.set(0, 0.4, 0);
+  } else if (follow) {
     const cz = chase.position.z;
-    camera.position.lerp(new THREE.Vector3(-3.5, 9 + cz * 0.08, cz * 1.1 + 13), 0.05);
-    controls.target.lerp(new THREE.Vector3(1.5, 0.4, cz * 0.5), 0.05);
+    camera.position.lerp(new THREE.Vector3(-4.5, 3.2 + cz * 0.05, cz + 8.5), 0.05);
+    controls.target.lerp(new THREE.Vector3(0.4, 0.5, cz * 0.45), 0.05);
   }
   controls.update();
   composer.render();
-  requestAnimationFrame(frame);
+  requestAnimationFrame(animate);
 }
-frame();
+animate();
 addEventListener("resize", () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight); });
 </script>
 </body>
