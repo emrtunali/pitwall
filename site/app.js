@@ -1,3 +1,4 @@
+import { simulate, lapTimes, actualPlan } from "./whatif.mjs";
 // Pitwall front-end: track replay (canvas), live timing board, and SVG analysis charts.
 // No build step and no dependencies; data comes from data/<year>/<race>/{race.json,positions.bin}.
 
@@ -352,12 +353,13 @@ const HELP = {
   positions: "Running order at the end of each lap. Shaded bands are Safety Car / VSC periods.",
   strategy: "Every stint by compound, in finishing order. Numbers are tyre age at the start of a stint when tyres were used before.",
   pace: "Clean green-flag laps (dots) and the race-pace model (line): driver pace + compound offset + degradation × tyre age + fuel/track evolution × lap. Excludes lap 1, in/out laps and neutralised laps.",
+  sim: "Rewrite a driver's strategy and see where they would have finished. Estimate = real finish + (model time with your plan − model time with the real plan), so the model's own error cancels; rivals keep their real race and traffic is not simulated. Safety Car laps keep the field's real pace.",
   window: "What the model thinks each pit stop was worth: total race time if that stop had been made on a different lap, everything else unchanged. Negative = faster. A strategy model, not a prediction of what would have happened in traffic.",
 };
 function renderChart() {
   document.querySelectorAll("#chartTabs button").forEach((b) => b.classList.toggle("on", b.dataset.chart === S.chart));
   $("chartHelp").textContent = HELP[S.chart];
-  ({ win: chartWin, gaps: chartGaps, positions: chartPositions, strategy: chartStrategy, pace: chartPace, window: chartWindow })[S.chart]();
+  ({ win: chartWin, gaps: chartGaps, positions: chartPositions, strategy: chartStrategy, pace: chartPace, window: chartWindow, sim: chartSim })[S.chart]();
   renderLegend(); updateCursor(leaderLap(S.t));
 }
 let cursorFn = null;
@@ -502,6 +504,69 @@ function chartWindow() {
   const p = document.createElement("p"); p.className = "note"; p.textContent = lines.join(" "); host.appendChild(p);
 }
 
+// ---------- strategy simulator ----------
+function chartSim() {
+  const host = $("chart"), sim = S.race.sim; host.innerHTML = "";
+  const nums = Object.keys(sim.finish).map(Number).filter((n) => String(n) in sim.pace);
+  if (!nums.length || sim.pit_loss == null) { host.innerHTML = '<p class="note">Not enough data to simulate strategies in this race.</p>'; return; }
+  const order = [...S.race.results].sort((a, b) => (a.pos ?? 99) - (b.pos ?? 99)).map((r) => r.driver).filter((n) => nums.includes(n));
+  if (!S.simDriver || !order.includes(S.simDriver)) S.simDriver = nums.includes(S.focus) ? S.focus : order[0];
+  const d = S.simDriver, N = sim.finish[String(d)][0];
+  if (S.simFrom == null || S.simFrom >= N - 1) S.simFrom = 1;
+  if (!S.simPlan || S.simPlanFor !== `${d}:${S.simFrom}`) { S.simPlan = actualPlan(sim, d, S.simFrom).map((p) => ({ lap: p.lap, compound: p.compound })); S.simPlanFor = `${d}:${S.simFrom}`; }
+  const comps = Object.keys(sim.offset);
+  const bar = document.createElement("div"); bar.className = "picker";
+  bar.innerHTML = `Driver <select id="sDriver">${order.map((n) => `<option value="${n}" ${n === d ? "selected" : ""}>${S.derived.byNum[n].code}</option>`).join("")}</select>
+    change strategy after lap <input id="sFrom" type="number" min="1" max="${N - 2}" value="${S.simFrom}" style="width:64px" class="btn">
+    <button class="btn" id="sReset">Real strategy</button><button class="btn" id="sUnder">Undercut −3</button><button class="btn" id="sOver">Overcut +3</button>`;
+  host.appendChild(bar);
+  const plan = document.createElement("div"); plan.className = "sim-plan";
+  S.simPlan.forEach((p, i) => {
+    const row = document.createElement("div");
+    row.innerHTML = `Stop ${i + 1}: pit for <select data-i="${i}" class="sComp">${comps.map((c) => `<option ${c === p.compound ? "selected" : ""}>${c}</option>`).join("")}</select>
+      at the end of lap <input data-i="${i}" class="sLap" type="number" min="${S.simFrom}" max="${N - 1}" value="${p.lap - 1}"> <button class="btn sDel" data-i="${i}">✕</button>`;
+    plan.appendChild(row);
+  });
+  const add = document.createElement("button"); add.className = "btn"; add.textContent = "+ add stop";
+  add.onclick = () => { const last = S.simPlan.length ? S.simPlan[S.simPlan.length - 1].lap : S.simFrom + 1; S.simPlan.push({ lap: Math.min(N - 1, last + 10), compound: comps[0] }); chartSim(); };
+  plan.appendChild(add); host.appendChild(plan);
+  const res = simulate(sim, d, S.simFrom, S.simPlan.map((p) => ({ ...p })));
+  const out = document.createElement("div"); out.className = "sim-result";
+  if (res) {
+    const faster = res.delta < 0, gain = res.position_actual - res.position_estimated;
+    out.innerHTML = `<span class="stat">Finish <b>P${res.position_actual} → P${res.position_estimated}</b></span>
+      <span class="stat">Race time <b class="${faster ? "good" : res.delta > 0 ? "bad" : ""}">${res.delta > 0 ? "+" : ""}${res.delta.toFixed(1)} s</b></span>
+      <span class="stat">${gain > 0 ? `gains ${gain} place${gain > 1 ? "s" : ""}` : gain < 0 ? `loses ${-gain} place${gain < -1 ? "s" : ""}` : "same position"}</span>
+      <span class="stat">pit loss <b>${sim.pit_loss}s</b> green / <b>${sim.pit_loss_neutral}s</b> under SC/VSC${sim.pit_loss_neutral_measured ? "" : " (assumed)"}</span>`;
+  }
+  host.appendChild(out);
+  const dry = new Set([...(S.derived.stints[d] || []).filter((s) => s.from <= S.simFrom).map((s) => s.compound), ...S.simPlan.map((p) => p.compound)]);
+  const dryN = ["SOFT", "MEDIUM", "HARD"].filter((c) => dry.has(c)).length;
+  if (dryN < 2 && !dry.has("INTERMEDIATE") && !dry.has("WET")) {
+    const w = document.createElement("p"); w.className = "warn"; w.textContent = "⚠ In a dry race the rules require using two different dry compounds; this plan would be disqualified."; host.appendChild(w);
+  }
+  // cumulative time difference lap by lap
+  const a = lapTimes(sim, d, S.simFrom, actualPlan(sim, d, S.simFrom)), b = lapTimes(sim, d, S.simFrom, S.simPlan);
+  if (a && b) {
+    const f = frame(host.appendChild(document.createElement("div")), 240, { l: 52, r: 30, t: 14, b: 30 });
+    let ca = 0, cb = 0; const pts = a.map(([lap, t], i) => { ca += t; cb += b[i][1]; return [lap, cb - ca]; });
+    const ys = pts.map((p) => p[1]), lo = Math.min(-1, ...ys), hi = Math.max(1, ...ys);
+    const X = scale(S.simFrom, N, f.M.l, f.W - f.M.r), Y = scale(lo, hi, f.H - f.M.b, f.M.t);
+    axes(f, X, Y, niceTicks(S.simFrom, N, 10).filter(Number.isInteger), niceTicks(lo, hi, 5), (v) => `${v > 0 ? "+" : ""}${v}s`);
+    el("line", { x1: f.M.l, x2: f.W - f.M.r, y1: Y(0), y2: Y(0), stroke: "#ffffff40" }, f.svg);
+    el("path", { d: "M" + pts.map(([l, v]) => `${X(l)},${Y(v)}`).join("L"), stroke: S.derived.byNum[d].colour, "stroke-width": 2.4, fill: "none" }, f.svg);
+    el("text", { x: f.M.l + 4, y: f.M.t + 10, class: "muted" }, f.svg).textContent = "your plan vs the real one, cumulative (below 0 = ahead)";
+  }
+  $("sDriver").onchange = (e) => { S.simDriver = +e.target.value; S.simPlan = null; chartSim(); };
+  $("sFrom").onchange = (e) => { S.simFrom = Math.max(1, Math.min(N - 2, +e.target.value || 1)); S.simPlan = null; chartSim(); };
+  $("sReset").onclick = () => { S.simPlan = null; chartSim(); };
+  const shift = (k) => { if (S.simPlan.length) S.simPlan[0].lap = Math.max(S.simFrom + 1, Math.min(N - 1, S.simPlan[0].lap + k)); chartSim(); };
+  $("sUnder").onclick = () => shift(-3); $("sOver").onclick = () => shift(3);
+  host.querySelectorAll(".sComp").forEach((x) => (x.onchange = (e) => { S.simPlan[+e.target.dataset.i].compound = e.target.value; chartSim(); }));
+  host.querySelectorAll(".sLap").forEach((x) => (x.onchange = (e) => { S.simPlan[+e.target.dataset.i].lap = Math.max(S.simFrom + 1, Math.min(N - 1, +e.target.value + 1)); S.simPlan.sort((p, q) => p.lap - q.lap); chartSim(); }));
+  host.querySelectorAll(".sDel").forEach((x) => (x.onclick = (e) => { S.simPlan.splice(+e.target.dataset.i, 1); chartSim(); }));
+}
+
 // ---------- season view ----------
 async function renderSeason() {
   const cards = $("seasonCards"); cards.innerHTML = "";
@@ -518,7 +583,29 @@ async function renderSeason() {
     c.onclick = () => { setView("replay"); loadRace(r.slug); };
     cards.appendChild(c);
   }
-  seasonChamp(); seasonPasses(); seasonPace(); seasonDeg(); seasonLoss();
+  seasonForecast(); seasonChamp(); seasonPasses(); seasonPace(); seasonDeg(); seasonLoss();
+}
+async function seasonForecast() {
+  let fc;
+  try { fc = await (await fetch(`data/${YEAR}/championship.json`)).json(); } catch { $("forecastBox").hidden = true; return; }
+  const left = fc.forecast.remaining.length;
+  $("fcMeta").textContent = ` after ${fc.after_round} · ${left} race${left === 1 ? "" : "s"} left`;
+  const row = (colour, label, p, pts, lo, hi) => `<div class="fc-row"><i style="background:${colour}"></i><span><b style="text-align:left">${label}</b></span>
+    <div class="bar"><span style="width:${Math.max(1, p * 100)}%;background:${colour}"></span></div><b>${fmtPct(p)}</b><small>${pts} → ${Math.round(lo)}–${Math.round(hi)}</small></div>`;
+  $("fcDrivers").innerHTML = fc.forecast.drivers.slice(0, 8).map((d) => row(d.colour, d.code, d.p_title, d.points, d.p10, d.p90)).join("");
+  $("fcTeams").innerHTML = fc.forecast.teams.slice(0, 8).map((t) => row(t.colour, t.team.replace(" F1 Team", "").replace(" Racing", ""), t.p_title, t.points, t.p10, t.p90)).join("");
+  const H = fc.history, f = frame($("fcHistory"), 260, { l: 48, r: 70, t: 14, b: 50 });
+  const X = scale(0, H.length - 1, f.M.l, f.W - f.M.r), Y = scale(0, 1, f.H - f.M.b, f.M.t);
+  axes(f, () => 0, Y, [], [0, 0.25, 0.5, 0.75, 1], (v) => `${v * 100}%`);
+  H.forEach((h, i) => el("text", { x: X(i), y: f.H - f.M.b + 14, transform: `rotate(35 ${X(i)} ${f.H - f.M.b + 14})`, class: "muted" }, f.svg).textContent = h.after);
+  const keys = [...new Set(H.flatMap((h) => Object.keys(h.drivers)))];
+  const byNum = Object.fromEntries(fc.forecast.drivers.map((d) => [String(d.num), d]));
+  for (const k of keys) {
+    const d = byNum[k]; if (!d) continue;
+    el("path", { d: "M" + H.map((h, i) => `${X(i)},${Y(h.drivers[k] ?? 0)}`).join("L"), stroke: d.colour, "stroke-width": 2.2, fill: "none" }, f.svg);
+    const last = H[H.length - 1].drivers[k] ?? 0;
+    if (last > 0.02) el("text", { x: f.W - f.M.r + 6, y: Y(last) + 4, class: "label", fill: d.colour }, f.svg).textContent = `${d.code} ${fmtPct(last)}`;
+  }
 }
 function seasonChamp() {
   const st = S.index.standings, rounds = st.rounds, last = rounds[rounds.length - 1].points;

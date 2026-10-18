@@ -14,6 +14,7 @@
   <nav class="tabs" id="viewTabs">
     <button data-view="replay" class="on">Race replay</button>
     <button data-view="season">Season</button>
+    <a class="lab-link" href="dirty-air.html">Dirty air 3D</a>
   </nav>
   <span class="status" id="status"></span>
   <label class="race-pick">
@@ -61,6 +62,7 @@
       <button data-chart="strategy">Tyre strategy</button>
       <button data-chart="pace">Pace &amp; degradation</button>
       <button data-chart="window">Pit window lab</button>
+      <button data-chart="sim">Strategy simulator</button>
     </nav>
     <div class="chart-help" id="chartHelp"></div>
     <div class="chart" id="chart"></div>
@@ -70,6 +72,13 @@
 
 <main id="seasonView" hidden>
   <section class="season-grid" id="seasonCards"></section>
+  <section class="analysis" id="forecastBox">
+    <h2>Who will be champion? <span class="note" id="fcMeta"></span></h2>
+    <p class="note">Every remaining Grand Prix simulated 20,000 times from each driver's form (finishing orders, recent races weighted more) and reliability. The race model behind it is tested on races it never saw (see results/championship_eval.json).</p>
+    <div class="fc-grid"><div><h3>Drivers</h3><div id="fcDrivers"></div></div><div><h3>Constructors</h3><div id="fcTeams"></div></div></div>
+    <h3>Title odds after each round</h3>
+    <div class="chart" id="fcHistory"></div>
+  </section>
   <section class="analysis">
     <h2>Drivers' championship</h2>
     <p class="note" id="champNote"></p>

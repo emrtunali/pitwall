@@ -4,11 +4,7 @@ from pitwall.build import slugify
 from pitwall.laps import neutral_windows
 from pitwall.openf1 import OpenF1
 from pitwall.track import MISSING, rdp, resample_positions
-from tests.conftest import iso, make_race
-
-
-def rc(t, msg, category="SafetyCar", flag=None, scope=None):
-    return {"date": iso(t), "message": msg, "category": category, "flag": flag, "scope": scope, "lap_number": 1}
+from tests.conftest import make_race, rc
 
 
 def test_vsc_window_from_messages():
@@ -61,3 +57,13 @@ def test_openf1_cache_round_trip(tmp_path):
     assert api.get("laps", session_key=1) == [{"ok": 1}]
     assert api.get("laps", session_key=1) == [{"ok": 1}]
     assert len(calls) == 1
+
+
+def test_chequered_flag_is_not_a_red_flag():
+    race = make_race(race_control=[rc(2000, "CHEQUERED FLAG", category="Flag", flag="CHEQUERED", scope="Track")])
+    assert neutral_windows(race) == []
+
+
+def test_red_flag_message_without_scope():
+    race = make_race(race_control=[rc(300, "RED FLAG - RACE SUSPENDED", category="Other")])
+    assert [w.kind for w in neutral_windows(race)] == ["RED"]

@@ -31,12 +31,14 @@ Grand Prix.
 |---|---|
 | **Coverage** | All 17 completed 2026 races (Melbourne → Singapore), 19,641 laps, 8.8 M car positions, 1,214 on-track passes |
 | **Always current** | A GitHub Action rebuilds the data **every day** and redeploys; a new race appears the morning after it ends |
-| **Tyre model, held-out test** | Forecasts the rest of a stint with **0.610 s** mean error, **28 % lower** than the flat-pace baseline (0.844 s), on 9 races not used during development |
-| **Win probability, held-out test** | Monte Carlo simulator, log-loss **1.027** vs **1.216** for a learned "running order" model and 2.709 for "the leader wins", on 9 unseen races |
-| **Original data** | Dirty-air cost per circuit (from 1.07 s/lap at Monaco to 0.05 s/lap at Silverstone), pass locations, tyre- and fuel-corrected team pace |
-| **Championship check** | Points recomputed from race + sprint results match the official standings in **380 / 380** driver-round checks |
+| **Data audit** | 165 finishing gaps cross-checked against the official results: 155 within 1 s, the other 10 are exactly stewards' time penalties. 0 unexplained. Championship totals: 380 / 380 match |
+| **Tyre model, held-out test** | Forecasts the rest of a stint with **0.610 s** mean error, **28 % lower** than the flat-pace baseline (0.843 s), on 9 races not used during development |
+| **Win probability, held-out test** | Monte Carlo simulator, log-loss **1.031** vs **1.216** for a learned "running order" model and 2.709 for "the leader wins", on 9 unseen races |
+| **Strategy simulator** | "What if he had pitted on lap X for hards?" Interactive in the browser; the Python reference and the JavaScript port are tested to give identical numbers |
+| **Title forecast** | Remaining Grands Prix simulated 20,000 times. A **macOS desktop widget** shows the odds and updates itself |
+| **Original data** | Dirty-air cost by circuit *and by gap* (0.83 s/lap within 0.5 s, ~0 beyond 1.5 s), shown in a **3D wake lab**. Also pass locations and tyre- and fuel-corrected team pace |
 | **Runs anywhere** | Double-click `Pitwall.command` (macOS) or `start.bat` (Windows): it downloads the latest races and opens the browser |
-| **Tests** | 23 tests on synthetic races with known ground truth, CI on Python 3.11 and 3.13 |
+| **Tests** | 32 tests, including synthetic races with known ground truth, a finite-difference gradient check and a Python↔JavaScript parity test. CI on Python 3.11 and 3.13 |
 
 ## What you can do
 
@@ -91,6 +93,10 @@ flowchart LR
 | [`insights.py`](pitwall/insights.py) | Dirty-air cost, on-track overtakes with locations, corrected race pace |
 | [`winprob.py`](pitwall/winprob.py), [`winprob_eval.py`](pitwall/winprob_eval.py) | Live win-probability simulator; calibration and held-out evaluation |
 | [`serve.py`](pitwall/serve.py) | Local mode: sync new races from the published site, serve, open the browser |
+| [`whatif.py`](pitwall/whatif.py), [`site/whatif.mjs`](site/whatif.mjs) | Strategy simulator (Python reference, browser port) |
+| [`championship.py`](pitwall/championship.py) | Plackett–Luce race model, season simulation, title-odds history, held-out evaluation |
+| [`verify.py`](pitwall/verify.py) | Data audit against the official classification |
+| [`widget/`](widget) | Native macOS desktop widget (SwiftUI) |
 | [`backtest.py`](pitwall/backtest.py), [`evaluate.py`](pitwall/evaluate.py) | Stint forecasting backtest with a chronological development/test split |
 | [`build.py`](pitwall/build.py) | Per-race bundles, season index, championship standings and their validation |
 | [`site/`](site) | The web app: `app.js` (replay engine, timing board, charts), `style.css`, `index.html` |
@@ -136,12 +142,12 @@ be?"*
 | Method | Dev MAE (8 races) | **Test MAE (9 races)** |
 |---|---|---|
 | **Race-pace model** | **0.564 s** | **0.610 s** |
-| Same model without tyre degradation | 0.651 s | 0.672 s |
-| Flat: rest of stint = mean of first 3 laps | 0.963 s | 0.844 s |
-| Driver's median clean lap | 1.233 s | 1.527 s |
-| Straight line through first 3 laps | 5.901 s | 4.294 s |
+| Same model without tyre degradation | 0.651 s | 0.673 s |
+| Flat: rest of stint = mean of first 3 laps | 0.963 s | 0.843 s |
+| Driver's median clean lap | 1.233 s | 1.530 s |
+| Straight line through first 3 laps | 5.901 s | 4.268 s |
 
-<sub>362 test stints, 6,289 forecast laps. Full tables (per race, per compound, per horizon, shrinkage search):
+<sub>362 test stints, 6,274 forecast laps. Full tables (per race, per compound, per horizon, shrinkage search):
 [`results/BACKTEST.md`](results/BACKTEST.md).</sub>
 
 | Laps ahead (test) | Model | Flat | Gain |
@@ -159,9 +165,104 @@ be?"*
 - **It beats the flat baseline on 8 of 9 test races.** The exception is Kuala Lumpur (1.59 s vs 1.14 s), a mixed
   race with two Safety Cars, a long VSC and intermediate tyres. The model has no term for a drying track.
 
+## Is the data correct?
+
+Every number comes from the raw feed, and `pitwall verify` audits the feed against the official
+classification for every race ([`results/DATA_CHECKS.md`](results/DATA_CHECKS.md)):
+
+| Check | Result |
+|---|---|
+| Championship totals, computed vs official, after every round | **380 / 380** identical |
+| Finishing gap from lap timing vs official gap | **155 / 165** within 1 s. The other 10 differ by exactly 5, 10 or 20 s: 6 match a stewards' penalty in the race-control feed and 4 are post-race penalties with no message. **0 unexplained** |
+| Winner's lap times summed vs official race time | Constant +0.35–0.51 s. Lap 1 is timed from the line, the race clock from the lights |
+| Missing lap records | 6 (last laps at Melbourne and Zandvoort). The charts fall back to the next lap's start time |
+
+The audit also caught real bugs, which are fixed and covered by tests. "CHEQUERED FLAG" contains the letters
+"RED FLAG", so every race briefly had a fake red flag at the end. And under a red flag every car changes
+tyres, which a naive simulator charges as pit stops.
+
+What is *modelled* rather than measured is labelled as such on the site: win probability, strategy what-ifs,
+the title forecast, and the airflow in the 3D lab.
+
+## Strategy simulator
+
+![Strategy simulator](docs/chart-sim.png)
+
+Pick a driver, a lap to change the plan from, and rewrite the stops (lap and compound), or use the
+*Undercut −3* / *Overcut +3* buttons. The site shows the new finishing position, the time won or lost, and
+the gap lap by lap. It warns when a plan breaks the two-dry-compound rule.
+
+The estimate is a **difference of two model runs**: real finish + (model with your plan − model with the real
+plan). The model's own bias cancels and only the effect of the plan remains. Other cars keep their real race.
+Laps run under a Safety Car or VSC keep the driver's real (slow) lap time, and stops made under them use the
+pit loss measured for neutralised stops.
+
+**How good is the underlying model?** It can replay every finisher's real strategy and compare with the real
+race time (244 drivers):
+
+| Plan changed from | Median error | 90th percentile |
+|---|---|---|
+| Lap 1 (whole race) | 9.7 s | 68 s |
+| Half distance | 5.2 s | 30 s |
+| Three quarters | 3.5 s | 18 s |
+
+Over a whole race the error is mostly traffic, plus wet laps, which the model does not price (Kuala Lumpur).
+The difference method removes much of that. The Python implementation is the reference, and
+`tests/test_whatif_parity.py` runs the browser's JavaScript through Node on the same inputs and requires
+identical results.
+
+## Championship forecast
+
+![Title forecast](docs/forecast.png)
+
+1. **Race model.** Plackett–Luce: the finishing order is drawn by repeatedly picking the next car with
+   probability ∝ exp(strength). Strengths are a MAP fit on the season's finishing orders, with recent races
+   weighted more and a Gaussian prior centred on a scaled log of championship points.
+2. **Reliability.** Retirement rates are shrunk towards the field average.
+3. **Simulation.** The remaining Grands Prix (and sprints, if any) are simulated 20,000 times with the points
+   tables read from the season's own results.
+4. **Title odds history.** The same forecast re-run after every round, each time using only the races up to that
+   round.
+
+**Honest evaluation.** A title forecast can only be checked when the season ends, but the race model under it
+can be checked now. Each race is predicted from the races before it, hyper-parameters are chosen on rounds
+2–8 and the model is scored on rounds 9–17. On development data the prior chose a strong anchor to the
+standings: with 8 races, finishing orders add little beyond what the points table already says. On the test
+races the model matches the "standings predict the race" baseline (top-10 log-likelihood −17.81 vs −17.83)
+and is far better than uniform (−23.92). As of Singapore, Antonelli leads by 102 points with 150 left, and the
+simulation gives him >99 %.
+
+### Desktop widget (macOS)
+
+```bash
+widget/build.sh                        # builds "Pitwall Widget.app" (Swift toolchain only)
+open "widget/Pitwall Widget.app"       # sits on the desktop, behind your windows
+```
+
+A native SwiftUI panel sits at desktop level: above the wallpaper, below your windows, on every Space, with no
+Dock icon. It shows driver and constructor title odds, the points range, and a sparkline of how the odds
+evolved. It refreshes from the published site every 30 minutes (the site itself is rebuilt daily) and keeps
+the last copy for offline use. Drag it anywhere; right-click to refresh or quit.
+
 ## Data you will not find anywhere else
 
 All three are derived from raw timing. None of them is published by Formula 1 or the data provider.
+
+![Dirty Air Lab](docs/dirty-air.png)
+
+**[Dirty Air Lab (3D)](https://emrtunali.github.io/pitwall/dirty-air.html).** Drag the gap slider and watch
+the wake of the car ahead reach the following car's front wing. Pick a circuit to see the lap time it
+actually costs there. The cost-vs-gap curve is **measured**: it is the race-pace model's residual on laps run
+at that gap, against clean air. Pooled over 2026:
+
+| Gap to the car ahead | < 0.5 s | 0.5–1 s | 1–1.5 s | 1.5–2 s | 2–3 s |
+|---|---|---|---|---|---|
+| Extra time per lap | **+0.83 s** | **+0.26 s** | +0.07 s | +0.01 s | −0.08 s |
+| Laps | 573 | 2,582 | 1,573 | 1,137 | 1,601 |
+
+The effect is concentrated in the last second and vanishes by about 1.5 s. Monaco (+1.27 s at < 0.5 s) and
+Madrid (+2.02 s) are the extremes, Monza (+0.28 s) and Silverstone (+0.30 s) the mildest. The 3D airflow
+itself (tip vortices, widening turbulent region) is an illustration, not CFD.
 
 **Dirty-air cost.** How much slower a car laps while it runs within 1 s of the car ahead, compared with clean air
 (more than 3 s), *after* the race-pace model has removed tyres, fuel and driver pace. The interval used is the
@@ -212,8 +313,8 @@ over the current position and the position after pending pit stops, with a race-
 
 | Method (test: 9 races, 379 laps) | Log-loss | Brier | Top pick |
 |---|---|---|---|
-| **Calibrated simulator** | **1.027** | 0.564 | 60.9 % |
-| Raw simulator | 1.053 | **0.525** | 56.2 % |
+| **Calibrated simulator** | **1.031** | 0.565 | 60.9 % |
+| Raw simulator | 1.062 | **0.529** | 55.4 % |
 | Running-order model alone | 1.216 | 0.613 | 60.7 % |
 | "The leader wins" | 2.709 | 0.766 | 60.9 % |
 
@@ -222,7 +323,7 @@ Full tables, checkpoints and the reliability table: [`results/WINPROB.md`](resul
 
 **What I learned (and why the README shows all of it).** I iterated on the running-order model three times. Each
 version improved the *development* log-loss (0.772 → 0.743 → 0.713), while the *test* log-loss got worse
-(0.932 → 0.992 → 1.027). Eight races are a small development set, and the second half of the season was less
+(0.932 → 0.992 → 1.027; 1.031 after the red-flag data fix described below). Eight races are a small development set, and the second half of the season was less
 predictable than the first (the test races include a wet race and the new semi-street circuit in Madrid). The
 reported model is the one the protocol selects on development data. I did not pick it by looking at the test
 set. The takeaway is that the simulator carries the transferable signal, and the order-based prior should get
@@ -237,6 +338,9 @@ Working with raw timing data meant finding its problems before they reached a ch
 |---|---|---|
 | The pit endpoint's `lap_number` is the in-lap at some events and the out-lap at others | Pit loss at Melbourne came out as 7 s (realistic: 20+ s) | Stops are taken from the timing flag `is_pit_out_lap`, which is consistent |
 | A red-flag suspension at Monza has no RED message | The Safety Car window ran to the chequered flag; 17 clean laps left, degradation 5 s/lap | Any lap where the field median is ≥ 3× normal is a suspension; an SC never called in ends when the field returns to racing pace |
+| Red flags are sometimes sent as "RED FLAG - RACE SUSPENDED" with no flag field | Zandvoort's 30-minute suspension was missed; the strategy replay was 30 min off | Messages that *start with* "RED FLAG" count. A substring match would also hit "CHEQUERED FLAG"; a test covers both |
+| Under a red flag every car changes tyres | The simulator charged each change as a pit stop (Monaco replay off by 2,000 s) | Tyre changes during a suspension, or without a pit-out lap, are free |
+| Lapped cars meet a Safety Car on a different lap number | Neutralised laps priced on the wrong lap | Neutralised laps are matched to each driver by time, not lap number |
 | A driver ran a whole race on intermediates (Montreal) | That compound is confounded with the driver's pace; the fit is singular | A compound must have ≥ 10 laps, ≥ 2 tyre ages and ≥ 2 drivers to enter the fit |
 | Location data has gaps (retirements, telemetry dropouts) | Cars freeze or jump across the infield | Samples more than 3 s from real data are marked missing and the car is hidden |
 | The 30 req/min rate limit | A naive fetch takes ~200 requests per race | Fetch all cars per time window and gzip-cache every response (the whole season fits in a 91 MB cache) |
@@ -260,10 +364,11 @@ pitwall serve              # sync new races, start the site, open the browser (o
 pitwall serve --offline    # use what is already downloaded
 pitwall serve --rebuild    # rebuild everything yourself from OpenF1 (~1 min per race, cached afterwards)
 pitwall evaluate           # rerun both backtests -> results/
+pitwall verify             # audit the feed against official results -> results/DATA_CHECKS.md
 ```
 
 ```bash
-pytest -q            # 23 tests
+pytest -q            # 32 tests
 ruff check .
 ```
 

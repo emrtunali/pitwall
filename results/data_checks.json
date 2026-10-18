@@ -1,0 +1,372 @@
+{
+  "summary": {
+    "races": 17,
+    "gaps_checked": 165,
+    "gaps_within_1s": 155,
+    "gaps_explained_by_penalty": 6,
+    "gaps_round_penalty_without_message": 4,
+    "gaps_unexplained": 0,
+    "missing_lap_records": 6,
+    "standings_checks": 380,
+    "standings_mismatches": 0
+  },
+  "races": [
+    {
+      "circuit": "Melbourne",
+      "race_time_offset_s": null,
+      "winner_missing_lap_times": [
+        1,
+        58
+      ],
+      "gaps": {
+        "checked": 0,
+        "within_1s": 0,
+        "explained_by_penalty": 0,
+        "round_penalty_without_message": [],
+        "unexplained": []
+      },
+      "lap_records": {
+        "expected_extra_lap_on_retirement": 0,
+        "missing": [
+          {
+            "driver": 63,
+            "classified": 58,
+            "in_feed": 57
+          },
+          {
+            "driver": 16,
+            "classified": 58,
+            "in_feed": 57
+          },
+          {
+            "driver": 44,
+            "classified": 58,
+            "in_feed": 57
+          }
+        ],
+        "other": []
+      }
+    },
+    {
+      "circuit": "Shanghai",
+      "race_time_offset_s": 0.506,
+      "winner_missing_lap_times": [],
+      "gaps": {
+        "checked": 7,
+        "within_1s": 7,
+        "explained_by_penalty": 0,
+        "round_penalty_without_message": [],
+        "unexplained": []
+      },
+      "lap_records": {
+        "expected_extra_lap_on_retirement": 3,
+        "missing": [],
+        "other": []
+      }
+    },
+    {
+      "circuit": "Suzuka",
+      "race_time_offset_s": 0.431,
+      "winner_missing_lap_times": [],
+      "gaps": {
+        "checked": 16,
+        "within_1s": 16,
+        "explained_by_penalty": 0,
+        "round_penalty_without_message": [],
+        "unexplained": []
+      },
+      "lap_records": {
+        "expected_extra_lap_on_retirement": 2,
+        "missing": [],
+        "other": []
+      }
+    },
+    {
+      "circuit": "Miami",
+      "race_time_offset_s": 0.442,
+      "winner_missing_lap_times": [],
+      "gaps": {
+        "checked": 9,
+        "within_1s": 7,
+        "explained_by_penalty": 0,
+        "round_penalty_without_message": [
+          {
+            "driver": 3,
+            "difference_s": 4.99
+          },
+          {
+            "driver": 16,
+            "difference_s": 20.05
+          }
+        ],
+        "unexplained": []
+      },
+      "lap_records": {
+        "expected_extra_lap_on_retirement": 4,
+        "missing": [],
+        "other": []
+      }
+    },
+    {
+      "circuit": "Montreal",
+      "race_time_offset_s": 0.42,
+      "winner_missing_lap_times": [],
+      "gaps": {
+        "checked": 3,
+        "within_1s": 3,
+        "explained_by_penalty": 0,
+        "round_penalty_without_message": [],
+        "unexplained": []
+      },
+      "lap_records": {
+        "expected_extra_lap_on_retirement": 6,
+        "missing": [],
+        "other": []
+      }
+    },
+    {
+      "circuit": "Monte Carlo",
+      "race_time_offset_s": 0.372,
+      "winner_missing_lap_times": [],
+      "gaps": {
+        "checked": 14,
+        "within_1s": 10,
+        "explained_by_penalty": 3,
+        "round_penalty_without_message": [
+          {
+            "driver": 11,
+            "difference_s": 10.26
+          }
+        ],
+        "unexplained": []
+      },
+      "lap_records": {
+        "expected_extra_lap_on_retirement": 7,
+        "missing": [],
+        "other": []
+      }
+    },
+    {
+      "circuit": "Catalunya",
+      "race_time_offset_s": 0.472,
+      "winner_missing_lap_times": [],
+      "gaps": {
+        "checked": 4,
+        "within_1s": 4,
+        "explained_by_penalty": 0,
+        "round_penalty_without_message": [],
+        "unexplained": []
+      },
+      "lap_records": {
+        "expected_extra_lap_on_retirement": 7,
+        "missing": [],
+        "other": []
+      }
+    },
+    {
+      "circuit": "Spielberg",
+      "race_time_offset_s": 0.449,
+      "winner_missing_lap_times": [],
+      "gaps": {
+        "checked": 7,
+        "within_1s": 7,
+        "explained_by_penalty": 0,
+        "round_penalty_without_message": [],
+        "unexplained": []
+      },
+      "lap_records": {
+        "expected_extra_lap_on_retirement": 4,
+        "missing": [],
+        "other": []
+      }
+    },
+    {
+      "circuit": "Silverstone",
+      "race_time_offset_s": 0.486,
+      "winner_missing_lap_times": [],
+      "gaps": {
+        "checked": 15,
+        "within_1s": 14,
+        "explained_by_penalty": 1,
+        "round_penalty_without_message": [],
+        "unexplained": []
+      },
+      "lap_records": {
+        "expected_extra_lap_on_retirement": 3,
+        "missing": [],
+        "other": [
+          {
+            "driver": 55,
+            "classified": 51,
+            "in_feed": 52
+          }
+        ]
+      }
+    },
+    {
+      "circuit": "Spa-Francorchamps",
+      "race_time_offset_s": null,
+      "winner_missing_lap_times": [
+        45
+      ],
+      "gaps": {
+        "checked": 16,
+        "within_1s": 16,
+        "explained_by_penalty": 0,
+        "round_penalty_without_message": [],
+        "unexplained": []
+      },
+      "lap_records": {
+        "expected_extra_lap_on_retirement": 3,
+        "missing": [],
+        "other": [
+          {
+            "driver": 12,
+            "classified": 44,
+            "in_feed": 45
+          }
+        ]
+      }
+    },
+    {
+      "circuit": "Hungaroring",
+      "race_time_offset_s": 0.376,
+      "winner_missing_lap_times": [],
+      "gaps": {
+        "checked": 6,
+        "within_1s": 5,
+        "explained_by_penalty": 1,
+        "round_penalty_without_message": [],
+        "unexplained": []
+      },
+      "lap_records": {
+        "expected_extra_lap_on_retirement": 3,
+        "missing": [],
+        "other": []
+      }
+    },
+    {
+      "circuit": "Zandvoort",
+      "race_time_offset_s": null,
+      "winner_missing_lap_times": [],
+      "gaps": {
+        "checked": 6,
+        "within_1s": 5,
+        "explained_by_penalty": 1,
+        "round_penalty_without_message": [],
+        "unexplained": []
+      },
+      "lap_records": {
+        "expected_extra_lap_on_retirement": 6,
+        "missing": [
+          {
+            "driver": 1,
+            "classified": 72,
+            "in_feed": 71
+          },
+          {
+            "driver": 27,
+            "classified": 71,
+            "in_feed": 70
+          },
+          {
+            "driver": 22,
+            "classified": 71,
+            "in_feed": 70
+          }
+        ],
+        "other": []
+      }
+    },
+    {
+      "circuit": "Monza",
+      "race_time_offset_s": 0.346,
+      "winner_missing_lap_times": [],
+      "gaps": {
+        "checked": 14,
+        "within_1s": 14,
+        "explained_by_penalty": 0,
+        "round_penalty_without_message": [],
+        "unexplained": []
+      },
+      "lap_records": {
+        "expected_extra_lap_on_retirement": 3,
+        "missing": [],
+        "other": []
+      }
+    },
+    {
+      "circuit": "Madring",
+      "race_time_offset_s": 0.451,
+      "winner_missing_lap_times": [],
+      "gaps": {
+        "checked": 7,
+        "within_1s": 7,
+        "explained_by_penalty": 0,
+        "round_penalty_without_message": [],
+        "unexplained": []
+      },
+      "lap_records": {
+        "expected_extra_lap_on_retirement": 4,
+        "missing": [],
+        "other": []
+      }
+    },
+    {
+      "circuit": "Baku",
+      "race_time_offset_s": 0.359,
+      "winner_missing_lap_times": [],
+      "gaps": {
+        "checked": 14,
+        "within_1s": 13,
+        "explained_by_penalty": 0,
+        "round_penalty_without_message": [
+          {
+            "driver": 5,
+            "difference_s": 10.22
+          }
+        ],
+        "unexplained": []
+      },
+      "lap_records": {
+        "expected_extra_lap_on_retirement": 7,
+        "missing": [],
+        "other": []
+      }
+    },
+    {
+      "circuit": "Kuala Lumpur",
+      "race_time_offset_s": 0.37,
+      "winner_missing_lap_times": [],
+      "gaps": {
+        "checked": 18,
+        "within_1s": 18,
+        "explained_by_penalty": 0,
+        "round_penalty_without_message": [],
+        "unexplained": []
+      },
+      "lap_records": {
+        "expected_extra_lap_on_retirement": 3,
+        "missing": [],
+        "other": []
+      }
+    },
+    {
+      "circuit": "Singapore",
+      "race_time_offset_s": 0.385,
+      "winner_missing_lap_times": [],
+      "gaps": {
+        "checked": 9,
+        "within_1s": 9,
+        "explained_by_penalty": 0,
+        "round_penalty_without_message": [],
+        "unexplained": []
+      },
+      "lap_records": {
+        "expected_extra_lap_on_retirement": 4,
+        "missing": [],
+        "other": []
+      }
+    }
+  ]
+}

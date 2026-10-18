@@ -84,6 +84,44 @@ def dirty_air(race: Race, model: PaceModel, rows: list[dict], bootstrap: int = 3
             "n_dirty": len(dirty), "n_clean": len(clean)}
 
 
+GAP_BINS = ((0.0, 0.5), (0.5, 1.0), (1.0, 1.5), (1.5, 2.0), (2.0, 3.0))
+
+
+def dirty_air_curve(race: Race, model: PaceModel, rows: list[dict]) -> dict:
+    """Residual lap time by gap to the car ahead, relative to clean air (> 3 s): the cost-vs-distance curve.
+
+    Returns per bin the mean extra time per lap and the number of laps. Small bins are noisy, so the
+    site pools them across circuits as well as showing each circuit.
+    """
+    ivl = _interval_lookup(race)
+    span = {(lap.driver, lap.lap): (lap.start, lap.start + (lap.duration or 0)) for lap in race.laps}
+    resid_by_bin: dict[int, list[float]] = defaultdict(list)
+    clean: list[float] = []
+    for r in rows:
+        if r["driver"] not in model.pace or r["compound"] not in model.offset or r["driver"] not in ivl:
+            continue
+        a, b = span[(r["driver"], r["lap"])]
+        t, v = ivl[r["driver"]]
+        inside = v[(t >= a) & (t <= b)]
+        if len(inside) == 0:
+            continue
+        gap = float(np.median(inside))
+        res = r["time"] - model.predict(r["driver"], r["compound"], r["tyre_age"], r["lap"])
+        if gap > CLEAN:
+            clean.append(res)
+            continue
+        for i, (lo, hi) in enumerate(GAP_BINS):
+            if lo <= gap < hi:
+                resid_by_bin[i].append(res)
+    if len(clean) < 30:
+        return {"bins": [], "clean_n": len(clean)}
+    base = float(np.mean(clean))
+    return {"clean_n": len(clean), "bins": [
+        {"lo": lo, "hi": hi, "n": len(resid_by_bin[i]),
+         "sum": round(float(np.sum(resid_by_bin[i]) - base * len(resid_by_bin[i])), 3)}
+        for i, (lo, hi) in enumerate(GAP_BINS)]}
+
+
 def overtakes(race: Race, windows: list[Window], pit_margin: float = 40.0) -> list[dict]:
     """Position swaps between two running cars, with the overtaking car's location.
 

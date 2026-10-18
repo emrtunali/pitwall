@@ -9,3 +9,4 @@ CLAUDE.md
 .DS_Store
 site/data/
 site/results/
+widget/*.app/

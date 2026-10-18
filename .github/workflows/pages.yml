@@ -39,6 +39,7 @@ jobs:
           restore-keys: openf1-
       - run: pitwall build
       - run: pitwall evaluate
+      - run: pitwall verify
       - run: cp -r results site/results
       - uses: actions/upload-pages-artifact@v3
         with:

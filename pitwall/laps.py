@@ -65,14 +65,22 @@ def neutral_windows(race: Race) -> list[Window]:
         elif "SAFETY CAR IN THIS LAP" in text and "SC" in open_:
             nxt = [s for s in lap_starts if s > t + 5]
             out.append(Window(open_.pop("SC"), nxt[0] if nxt else t + 120, "SC"))
-        elif flag == "RED" and scope == "Track":
+        elif (flag == "RED" and scope in ("Track", None)) or text.startswith("RED FLAG"):  # not "CHEQUERED FLAG"
             open_.setdefault("RED", t)
         elif flag == "GREEN" and scope == "Track" and "RED" in open_:
             out.append(Window(open_.pop("RED"), t, "RED"))
     for kind, start in open_.items():
-        out.append(Window(start, back_to_green(start) if kind == "SC" else race.end_time, kind))
-    for n, m in med.items():
-        if normal and m >= 3 * normal and n in leader:
+        # a Safety Car or red flag that is never closed by a message ends when the field is back to pace
+        out.append(Window(start, back_to_green(start) if kind in ("SC", "RED") else race.end_time, kind))
+    # Suspensions show up as very long laps. Pit laps are included here on purpose: under a red flag
+    # most cars go through the pit lane, so excluding them can hide the suspension entirely.
+    all_laps: dict[int, list[float]] = {}
+    for lap in race.laps:
+        if lap.duration:
+            all_laps.setdefault(lap.lap, []).append(lap.duration)
+    for n, durs in all_laps.items():
+        m = float(np.median(durs))
+        if normal and len(durs) >= 3 and m >= 3 * normal and n in leader:
             start = leader[n]
             if not any(w.kind == "RED" and w.start <= start + m and w.end >= start for w in out):
                 out.append(Window(start, start + m, "RED"))

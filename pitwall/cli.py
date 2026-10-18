@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 from .openf1 import OpenF1
@@ -15,6 +16,7 @@ def main(argv: list[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="cmd", required=True)
     b = sub.add_parser("build", help="Fetch completed races and write site/data")
     b.add_argument("--out", default="site/data")
+    sub.add_parser("verify", help="Audit the timing feed against the official classification")
     e = sub.add_parser("evaluate", help="Run the backtests: stint forecasts and live win probability")
     e.add_argument("--out", default="results")
     v = sub.add_parser("serve", help="Open the site locally (downloads the latest races first)")
@@ -41,10 +43,18 @@ def main(argv: list[str] | None = None) -> None:
         if not (site / "data" / str(args.year) / "index.json").exists():
             raise SystemExit("No race data yet. Connect to the internet or run `pitwall serve --rebuild`.")
         serve(site, args.port, not args.no_browser)
+    elif args.cmd == "verify":
+        from .verify import run as run_verify
+
+        print(json.dumps(run_verify(api, Path("results"), args.year)["summary"], indent=2))
     elif args.cmd == "build":
         from .build import build_site
+        from .championship import run as run_championship
 
         build_site(api, Path(args.out), args.year)
+        fc = run_championship(api, Path("results"), Path(args.out), args.year)
+        lead = fc["forecast"]["drivers"][0]
+        print(f"championship: {lead['code']} {lead['p_title']:.1%} after {fc['after_round']}", flush=True)
     else:
         from .evaluate import run
         from .winprob_eval import run as run_winprob

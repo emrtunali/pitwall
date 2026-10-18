@@ -13,13 +13,14 @@ from pathlib import Path
 
 import numpy as np
 
-from .insights import corrected_pace, dirty_air, overtakes
+from .insights import corrected_pace, dirty_air, dirty_air_curve, overtakes
 from .laps import clean_laps, neutral_windows, pit_stops
 from .model import fit
 from .openf1 import OpenF1
 from .race import Race, fetch_race
 from .strategy import pit_loss, what_if
 from .track import rdp, resample_positions, track_outline
+from .whatif import sim_block
 from .winprob import CALIBRATION, N_PRIOR_RACES, Priors, calibrated, estimate_priors, win_probabilities
 
 HZ = 4.0
@@ -95,11 +96,13 @@ def race_bundle(race: Race, priors: Priors | None = None) -> tuple[dict, np.ndar
         "model": model.to_json() | {"pit_loss": loss, "predicted": predicted},
         "insights": {
             "dirty_air": dirty_air(race, model, rows),
+            "dirty_air_curve": dirty_air_curve(race, model, rows),
             "overtakes": overtakes(race, windows),
             "corrected_pace": corrected_pace(model, race),
         },
         "win_probability": calibrated(win_probabilities(race, windows, priors or Priors(), sims=2000,
                                                         kappa=CALIBRATION["kappa"])["states"]),
+        "sim": sim_block(race, model, windows, loss["median"]),
         "strategy": {str(d): s for d in order if loss["median"] and (s := what_if(race, model, loss["median"], d))},
     }
     return bundle, grid
@@ -134,6 +137,7 @@ def write_race(race: Race, out_dir: Path, priors: Priors | None = None) -> dict:
         "pit_loss": bundle["model"]["pit_loss"]["median"],
         "outline": rdp_outline(bundle["track"]["outline"]),
         "dirty_air": bundle["insights"]["dirty_air"],
+        "dirty_air_curve": bundle["insights"]["dirty_air_curve"],
         "overtakes": len(bundle["insights"]["overtakes"]),
         "team_pace": bundle["insights"]["corrected_pace"]["teams"],
     }

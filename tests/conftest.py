@@ -12,6 +12,11 @@ def iso(seconds: float) -> str:
     return (T0 + timedelta(seconds=seconds)).isoformat()
 
 
+def rc(t, msg, category="SafetyCar", flag=None, scope=None):
+    """A race-control message at race time ``t``."""
+    return {"date": iso(t), "message": msg, "category": category, "flag": flag, "scope": scope, "lap_number": 1}
+
+
 def make_race(laps_per_driver: int = 30, pit_lap: int = 15, deg=(0.08, 0.03), fuel: float = -0.05,
               pace=(0.0, 0.5, 1.0), noise: float = 0.0, seed: int = 0,
               race_control: list[dict] | None = None) -> Race:

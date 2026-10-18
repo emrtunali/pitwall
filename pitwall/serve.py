@@ -41,6 +41,9 @@ def sync_from_site(site_dir: Path, year: int = 2026, base: str = LIVE) -> int:
             fetched += 1
             print(f"  ↓ {race['name']}", flush=True)
         local_path.parent.mkdir(parents=True, exist_ok=True)
+        champ = client.get(f"{base}/data/{year}/championship.json")
+        if champ.status_code == 200:
+            (out / "championship.json").write_bytes(champ.content)
         local_path.write_text(index.text)
     return fetched
 

@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dirty Air Lab · Pitwall</title>
+<meta name="description" content="3D view of the wake behind a Formula 1 car, with the lap time a following car actually loses at each gap, measured from 2026 race data.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%23e10600'/></svg>">
+<style>
+  :root { --ink:#eef0f3; --muted:#8b93a1; --panel:#0e1116cc; --line:#2a2f38; --accent:#e10600; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #07090c; color: var(--ink); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
+  #scene { position: fixed; inset: 0; }
+  .top { position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 14px; padding: 12px 18px; background: linear-gradient(#07090ce6, #07090c00); z-index: 2; }
+  .top a { color: var(--muted); text-decoration: none; font-weight: 600; }
+  .top b { font-size: 17px; }
+  .hud { position: fixed; left: 18px; bottom: 18px; width: min(440px, calc(100vw - 32px)); background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; backdrop-filter: blur(10px); z-index: 2; }
+  .big { font-size: 38px; font-weight: 800; font-family: ui-monospace, Menlo, monospace; letter-spacing: -1px; }
+  .big small { font-size: 15px; color: var(--muted); font-weight: 600; letter-spacing: 0; }
+  .muted { color: var(--muted); font-size: 12.5px; }
+  label { display: block; color: var(--muted); font-size: 12px; margin: 12px 0 4px; }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  select { width: 100%; background: #161a21; color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; }
+  svg { width: 100%; height: 110px; display: block; margin-top: 10px; }
+  .note { position: fixed; right: 18px; bottom: 18px; max-width: 330px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; font-size: 12px; color: var(--muted); z-index: 2; }
+  @media (max-width: 760px) { .note { display: none; } .big { font-size: 30px; } .hud { padding: 12px 14px; } }
+</style>
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }</script>
+</head>
+<body>
+<div id="scene"></div>
+<div class="top"><a href="./">← Pitwall</a><b>Dirty Air Lab</b><span class="muted" id="sub"></span></div>
+<div class="hud">
+  <div class="row"><span class="muted">Measured cost of following at this gap</span><span class="muted" id="laps"></span></div>
+  <div class="big" id="cost">–</div>
+  <div class="muted" id="explain"></div>
+  <label for="gap">Gap to the car ahead: <b id="gapv"></b></label>
+  <input id="gap" type="range" min="0.25" max="3" step="0.05" value="0.7">
+  <label for="circuit">Circuit</label>
+  <select id="circuit"></select>
+  <svg id="curve" viewBox="0 0 400 110" preserveAspectRatio="none"></svg>
+</div>
+<div class="note">
+  <b style="color:var(--ink)">What is real here.</b> The lap-time numbers and the curve are measured from 2026 timing data. They are the race-pace
+  model's residual on laps run at that gap, compared with laps in clean air (more than 3 s), after removing tyres, fuel and driver pace.
+  The airflow is an <i>illustration</i> of the wake (rear-wing tip vortices and a widening turbulent region), not a CFD simulation.
+</div>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+// ---------------- data: measured cost per gap bin ----------------
+const index = await (await fetch("data/2026/index.json")).json();
+const races = index.races.filter((r) => r.dirty_air_curve?.bins?.length);
+const BIN_MID = [0.25, 0.75, 1.25, 1.75, 2.5];
+function curveFor(slug) {
+  const sel = slug === "all" ? races : races.filter((r) => r.slug === slug);
+  const sum = [0, 0, 0, 0, 0], n = [0, 0, 0, 0, 0];
+  for (const r of sel) r.dirty_air_curve.bins.forEach((b, i) => { sum[i] += b.sum; n[i] += b.n; });
+  return BIN_MID.map((g, i) => ({ g, cost: n[i] ? sum[i] / n[i] : null, n: n[i] }));
+}
+function costAt(curve, gap) {
+  if (gap >= 3) return { cost: 0, n: null };
+  const pts = curve.filter((p) => p.cost != null);
+  if (gap <= pts[0].g) return pts[0];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    if (gap <= b.g) { const f = (gap - a.g) / (b.g - a.g); return { cost: a.cost + f * (b.cost - a.cost), n: f < 0.5 ? a.n : b.n }; }
+  }
+  return pts[pts.length - 1];
+}
+const sel = document.getElementById("circuit");
+sel.innerHTML = `<option value="all">All 2026 circuits (pooled)</option>` +
+  [...races].sort((a, b) => (b.dirty_air?.cost ?? 0) - (a.dirty_air?.cost ?? 0))
+    .map((r) => `<option value="${r.slug}">${r.circuit} · ${r.dirty_air?.cost != null ? r.dirty_air.cost.toFixed(2) + " s/lap within 1 s" : ""}</option>`).join("");
+document.getElementById("sub").textContent = `${races.length} races · data ${index.updated_at?.slice(0, 10) ?? ""}`;
+
+// ---------------- three.js scene ----------------
+const host = document.getElementById("scene");
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+host.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x07090c);
+scene.fog = new THREE.Fog(0x07090c, 60, 170);
+const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
+camera.position.set(-19, 12, -4);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(3, 0, 16);
+controls.enableDamping = true; controls.maxPolarAngle = Math.PI * 0.49; controls.minDistance = 8; controls.maxDistance = 90;
+scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x101318, 1.1));
+const sun = new THREE.DirectionalLight(0xffffff, 2.2); sun.position.set(-20, 30, -10); scene.add(sun);
+
+// track: asphalt, kerbs and dashed lines that scroll to suggest ~250 km/h
+const asphalt = new THREE.Mesh(new THREE.PlaneGeometry(26, 400), new THREE.MeshStandardMaterial({ color: 0x1a1d22, roughness: 0.95 }));
+asphalt.rotation.x = -Math.PI / 2; asphalt.position.z = 60; scene.add(asphalt);
+const dashes = new THREE.Group();
+for (let i = 0; i < 40; i++) {
+  for (const x of [-6, 6]) {
+    const d = new THREE.Mesh(new THREE.PlaneGeometry(0.25, 3), new THREE.MeshBasicMaterial({ color: 0x3a3f48 }));
+    d.rotation.x = -Math.PI / 2; d.position.set(x, 0.01, -100 + i * 8); dashes.add(d);
+  }
+  for (const x of [-12.6, 12.6]) {
+    const k = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 4), new THREE.MeshBasicMaterial({ color: i % 2 ? 0xe10600 : 0xf2f2f2 }));
+    k.rotation.x = -Math.PI / 2; k.position.set(x, 0.012, -100 + i * 8); dashes.add(k);
+  }
+}
+scene.add(dashes);
+
+// stylised 2026-style car built from primitives (1 unit ≈ 1 m)
+function makeCar(color) {
+  const car = new THREE.Group();
+  const paint = new THREE.MeshStandardMaterial({ color, metalness: 0.4, roughness: 0.35 });
+  const carbon = new THREE.MeshStandardMaterial({ color: 0x15171b, metalness: 0.3, roughness: 0.6 });
+  const tyre = new THREE.MeshStandardMaterial({ color: 0x0b0b0c, roughness: 0.9 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.5, 3.4), paint); body.position.set(0, 0.45, 0.2); car.add(body);
+  const nose = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.32, 1.9, 12), paint);
+  nose.rotation.x = Math.PI / 2; nose.position.set(0, 0.35, -2.4); car.add(nose);
+  for (const s of [-1, 1]) {
+    const pod = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.42, 1.8), paint); pod.position.set(s * 0.7, 0.38, 0.3); car.add(pod);
+  }
+  const cover = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 1.6), paint); cover.position.set(0, 0.85, 0.9); car.add(cover);
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.04, 8, 24, Math.PI), carbon);
+  halo.rotation.set(-Math.PI / 2, 0, 0); halo.position.set(0, 0.8, -0.35); car.add(halo);
+  const fw = new THREE.Mesh(new THREE.BoxGeometry(1.95, 0.05, 0.45), carbon); fw.position.set(0, 0.12, -3.3); car.add(fw);
+  const fw2 = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.04, 0.25), paint); fw2.position.set(0, 0.2, -3.2); fw2.rotation.x = -0.25; car.add(fw2);
+  const rw = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.06, 0.4), carbon); rw.position.set(0, 1.0, 2.0); car.add(rw);
+  const rw2 = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.05, 0.25), paint); rw2.position.set(0, 1.12, 2.15); rw2.rotation.x = 0.35; car.add(rw2);
+  for (const s of [-1, 1]) {
+    const ep = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.55, 0.6), carbon); ep.position.set(s * 0.52, 0.85, 2.05); car.add(ep);
+  }
+  const wheels = [];
+  for (const [x, z, r] of [[-0.85, -1.75, 0.36], [0.85, -1.75, 0.36], [-0.85, 1.55, 0.38], [0.85, 1.55, 0.38]]) {
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.38, 24), tyre);
+    w.rotation.z = Math.PI / 2; w.position.set(x, r, z); car.add(w); wheels.push(w);
+  }
+  car.userData.wheels = wheels;
+  return car;
+}
+const lead = makeCar(0x27f4d2); scene.add(lead);
+const chase = makeCar(0xff8000); scene.add(chase);
+// The cars drive towards -z; in the cars' frame the air flows towards +z (backwards).
+
+// ---------------- wake particles (illustrative) ----------------
+const N = 9000;
+const pos = new Float32Array(N * 3), col = new Float32Array(N * 3), age = new Float32Array(N), seed = new Float32Array(N * 3);
+const geo = new THREE.BufferGeometry();
+geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+const mat = new THREE.PointsMaterial({ size: 0.11, vertexColors: true, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending });
+scene.add(new THREE.Points(geo, mat));
+const MAXZ = 95;
+function spawn(i) {
+  // emitted from the rear wing tips (vortices), the diffuser and the wheels
+  const r = Math.random();
+  let x, y;
+  if (r < 0.45) { const s = Math.random() < 0.5 ? -1 : 1; x = s * (0.5 + Math.random() * 0.08); y = 1.0 + Math.random() * 0.15; seed[i * 3] = s; }
+  else if (r < 0.75) { x = (Math.random() - 0.5) * 0.9; y = 0.15 + Math.random() * 0.2; seed[i * 3] = 0; }
+  else { const s = Math.random() < 0.5 ? -1 : 1; x = s * 0.85; y = 0.2 + Math.random() * 0.4; seed[i * 3] = 0; }
+  pos[i * 3] = x; pos[i * 3 + 1] = y; pos[i * 3 + 2] = 2.2 + Math.random() * 0.3;
+  seed[i * 3 + 1] = Math.random() * 6.28; seed[i * 3 + 2] = 0.6 + Math.random() * 0.8;
+  age[i] = 0;
+}
+for (let i = 0; i < N; i++) { spawn(i); age[i] = Math.random() * 3; pos[i * 3 + 2] = 2.2 + Math.random() * MAXZ; }
+
+// ---------------- interaction ----------------
+let gap = +document.getElementById("gap").value, curve = curveFor("all");
+const toDist = (g) => 7 + g * 26;            // scene distance (compressed) for a time gap
+const toMetres = (g) => Math.round(g * 69);  // ≈ 250 km/h
+function updateHud() {
+  const c = costAt(curve, gap);
+  document.getElementById("gapv").textContent = `${gap.toFixed(2)} s  (≈ ${toMetres(gap)} m at 250 km/h)`;
+  document.getElementById("cost").innerHTML = c.cost == null ? "–" : `${c.cost >= 0 ? "+" : ""}${c.cost.toFixed(2)} <small>s / lap</small>`;
+  document.getElementById("laps").textContent = c.n ? `${c.n} laps in this gap band` : "";
+  document.getElementById("explain").textContent = gap > 1.5
+    ? "Beyond about 1.5 s the measured cost is indistinguishable from clean air."
+    : "Turbulent, slower air reaches the following car's front wing: it loses grip in corners and slides its tyres.";
+  drawCurve();
+}
+function drawCurve() {
+  const svg = document.getElementById("curve"), W = 400, H = 110, pad = 18;
+  const pts = curve.filter((p) => p.cost != null);
+  const max = Math.max(0.3, ...pts.map((p) => p.cost)), min = Math.min(-0.1, ...pts.map((p) => p.cost));
+  const X = (g) => pad + (g / 3) * (W - 2 * pad), Y = (v) => H - pad - ((v - min) / (max - min)) * (H - 2 * pad);
+  svg.innerHTML = `<line x1="${pad}" x2="${W - pad}" y1="${Y(0)}" y2="${Y(0)}" stroke="#ffffff30"/>` +
+    `<polyline fill="none" stroke="#e10600" stroke-width="2.5" points="${pts.map((p) => `${X(p.g)},${Y(p.cost)}`).join(" ")} ${X(3)},${Y(0)}"/>` +
+    pts.map((p) => `<circle cx="${X(p.g)}" cy="${Y(p.cost)}" r="3.5" fill="#e10600"/>`).join("") +
+    `<line x1="${X(gap)}" x2="${X(gap)}" y1="${pad / 2}" y2="${H - pad}" stroke="#fff" stroke-dasharray="3 3"/>` +
+    [0, 1, 2, 3].map((g) => `<text x="${X(g)}" y="${H - 3}" fill="#8b93a1" font-size="10" text-anchor="middle">${g}s</text>`).join("") +
+    `<text x="${pad}" y="11" fill="#8b93a1" font-size="10">extra s/lap vs clean air</text>`;
+}
+document.getElementById("gap").oninput = (e) => { gap = +e.target.value; updateHud(); };
+sel.onchange = () => { curve = curveFor(sel.value); updateHud(); };
+updateHud();
+
+// ---------------- animation ----------------
+chase.position.z = toDist(gap);  // start in place; later gap changes glide
+camera.position.set(-3.5, 9 + chase.position.z * 0.08, chase.position.z * 1.1 + 13);
+controls.target.set(1.5, 0.4, chase.position.z * 0.5);
+const clock = new THREE.Clock();
+let autoOrbit = true;  // follow the cars until the user takes the camera
+controls.addEventListener("start", () => { autoOrbit = false; });  // stop drifting once the user grabs the view
+const red = new THREE.Color(0xff5a1f), blue = new THREE.Color(0x3d8bff), hit = new THREE.Color(0xffffff);
+function frame() {
+  const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
+  const dz = toDist(gap);
+  chase.position.z += (dz - chase.position.z) * 0.08;
+  chase.position.x = Math.sin(t * 0.7) * 0.25;  // the chasing car weaves a little in the wake
+  chase.rotation.y = -Math.cos(t * 0.7) * 0.02;
+  for (const car of [lead, chase]) for (const w of car.userData.wheels) w.rotation.x += dt * 40;
+  dashes.position.z = ((t * 70) % 8);
+  const fz = chase.position.z - 3.3, fx = chase.position.x;  // front wing of the chasing car
+  for (let i = 0; i < N; i++) {
+    const k = i * 3;
+    age[i] += dt;
+    const z = pos[k + 2] - 2.2;
+    const spread = 0.35 + 0.11 * Math.sqrt(Math.max(z, 0));     // the wake widens with distance
+    const s = seed[k], ph = seed[k + 1], amp = seed[k + 2];
+    pos[k + 2] += dt * (32 + 6 * amp);                             // carried backwards with the flow
+    if (s !== 0) {                                                 // tip vortex: spirals around its core
+      const cx = s * (0.55 + 0.05 * z ** 0.6), cy = 1.0 + 0.03 * z;  // vortices drift outwards and upwards
+      const ang = ph + t * 6 * s + z * 0.25, rad = 0.12 + 0.02 * z ** 0.8;
+      pos[k] += ((cx + Math.cos(ang) * rad) - pos[k]) * 0.2;
+      pos[k + 1] += ((cy + Math.sin(ang) * rad) - pos[k + 1]) * 0.2;
+    } else {                                                        // turbulent core: random walk that grows
+      pos[k] += (Math.sin(t * 3 + ph + z * 0.3) * spread * amp - pos[k]) * 0.04 + (Math.random() - 0.5) * 0.04 * spread;
+      pos[k + 1] = Math.max(0.05, pos[k + 1] + (Math.cos(t * 2.3 + ph + z * 0.21) * 0.6 * spread + 0.6 - pos[k + 1]) * 0.03);
+    }
+    const near = Math.abs(pos[k + 2] - fz) < 0.6 && Math.abs(pos[k] - fx) < 1.2 && pos[k + 1] < 0.8;
+    const fade = Math.max(0, 1 - z / MAXZ);
+    const c = near && gap < 1.5 ? hit : red.clone().lerp(blue, Math.min(1, z / 40));
+    col[k] = c.r * fade; col[k + 1] = c.g * fade; col[k + 2] = c.b * fade;
+    if (pos[k + 2] > MAXZ + 2.2 || pos[k + 2] > fz + 0.8 && Math.abs(pos[k] - fx) < 1 && pos[k + 1] < 1.2) spawn(i);
+  }
+  geo.attributes.position.needsUpdate = true; geo.attributes.color.needsUpdate = true;
+  if (autoOrbit) {  // chase cam: behind and above the following car, looking up the wake at the leader
+    const cz = chase.position.z;
+    camera.position.lerp(new THREE.Vector3(-3.5, 9 + cz * 0.08, cz * 1.1 + 13), 0.05);
+    controls.target.lerp(new THREE.Vector3(1.5, 0.4, cz * 0.5), 0.05);
+  }
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+frame();
+addEventListener("resize", () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+</script>
+</body>
+</html>
