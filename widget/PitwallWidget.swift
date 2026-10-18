@@ -146,6 +146,7 @@ struct Sparkline: View {
 
 struct WidgetView: View {
     @ObservedObject var store: Store
+    var forSnapshot = false  // AppKit-backed controls cannot be rendered off-screen
     @State private var teams = false
 
     var body: some View {
@@ -153,10 +154,14 @@ struct WidgetView: View {
             HStack {
                 Text("🏁 2026 TITLE ODDS").font(.system(size: 12, weight: .heavy)).tracking(0.8)
                 Spacer()
-                Picker("", selection: $teams) {
-                    Text("Drivers").tag(false); Text("Teams").tag(true)
+                if forSnapshot {
+                    Text("Drivers · Teams").font(.system(size: 11, weight: .semibold)).foregroundStyle(.secondary)
+                } else {
+                    Picker("", selection: $teams) {
+                        Text("Drivers").tag(false); Text("Teams").tag(true)
+                    }
+                    .pickerStyle(.segmented).labelsHidden().frame(width: 130)
                 }
-                .pickerStyle(.segmented).labelsHidden().frame(width: 130)
             }
             if let f = store.forecast {
                 if teams {
@@ -186,7 +191,11 @@ struct WidgetView: View {
             HStack {
                 Text(store.status).font(.system(size: 9)).foregroundStyle(.tertiary)
                 Spacer()
-                Button("Open Pitwall") { NSWorkspace.shared.open(siteURL) }.buttonStyle(.link).font(.system(size: 10))
+                if forSnapshot {
+                    Text("Open Pitwall ↗").font(.system(size: 10)).foregroundStyle(.blue)
+                } else {
+                    Button("Open Pitwall") { NSWorkspace.shared.open(siteURL) }.buttonStyle(.link).font(.system(size: 10))
+                }
             }
         }
         .padding(14)
@@ -238,7 +247,7 @@ func snapshot(to path: String) {
     while (store.forecast == nil || store.next == nil) && Date() < deadline {
         RunLoop.main.run(until: Date().addingTimeInterval(0.2))
     }
-    let view = WidgetView(store: store).padding(24).background(Color(red: 0.13, green: 0.16, blue: 0.22))
+    let view = WidgetView(store: store, forSnapshot: true).padding(24).background(Color(red: 0.13, green: 0.16, blue: 0.22))
     let renderer = ImageRenderer(content: view)
     renderer.scale = 2
     guard let img = renderer.nsImage, let tiff = img.tiffRepresentation,

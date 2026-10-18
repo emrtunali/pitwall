@@ -239,6 +239,8 @@ widget/build.sh                        # builds "Pitwall Widget.app" (Swift tool
 open "widget/Pitwall Widget.app"       # sits on the desktop, behind your windows
 ```
 
+<img src="docs/widget.png" width="420" alt="Pitwall desktop widget">
+
 A native SwiftUI panel sits at desktop level: above the wallpaper, below your windows, on every Space, with no
 Dock icon. It shows driver and constructor title odds, the points range, and a sparkline of how the odds
 evolved. It refreshes from the published site every 30 minutes (the site itself is rebuilt daily) and keeps
