@@ -10,6 +10,14 @@
 #        widget/build.sh --install  build, copy to ~/Applications and launch
 set -euo pipefail
 cd "$(dirname "$0")"
+SRC="$(pwd)"
+# Build in a clean temporary folder: macOS adds Finder metadata and a "hidden" flag to files in some
+# folders (e.g. Desktop), and codesign refuses bundles that carry it ("resource fork, Finder information,
+# or similar detritus not allowed").
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
+cp PitwallWidget.swift TitleOddsWidget.swift "$STAGE/"
+cd "$STAGE"
 APP="Pitwall Widget.app"
 EXT="$APP/Contents/PlugIns/TitleOdds.appex"
 SIGN_ID="${SIGN_ID:-$(security find-identity -v -p codesigning 2>/dev/null | sed -n 's/.*"\(Apple Development[^"]*\)".*/\1/p' | head -1)}"
@@ -58,6 +66,7 @@ cat > /tmp/pitwall-ext.entitlements <<PLIST
   <key>com.apple.security.network.client</key><true/>
 </dict></plist>
 PLIST
+xattr -cr "$APP"; chflags -R nohidden "$APP"
 if [ -n "$SIGN_ID" ]; then
   codesign --force --sign "$SIGN_ID" --entitlements /tmp/pitwall-ext.entitlements --timestamp=none "$EXT"
   codesign --force --sign "$SIGN_ID" --timestamp=none "$APP"
@@ -66,12 +75,16 @@ else
   codesign --force --sign - "$APP" >/dev/null 2>&1 || true
   echo "No Apple Development identity found: the desktop panel works, the WidgetKit widget will not load."
 fi
+codesign --verify --deep --strict "$APP" 2>/dev/null && echo "Signature verified" || echo "Warning: signature not valid"
+rm -rf "$SRC/$APP"
+ditto --noextattr --noqtn "$APP" "$SRC/$APP"
+cd "$SRC"
 echo "Built $(pwd)/$APP"
 if [ "${1:-}" = "--install" ]; then
   # WidgetKit discovers extensions from installed apps: copy to ~/Applications and launch once.
   mkdir -p "$HOME/Applications"
   pkill -x PitwallWidget 2>/dev/null || true
-  rm -rf "$HOME/Applications/$APP" && cp -R "$APP" "$HOME/Applications/"
+  rm -rf "$HOME/Applications/$APP" && ditto --noextattr --noqtn "$STAGE/$APP" "$HOME/Applications/$APP"
   open "$HOME/Applications/$APP"
   echo "Installed. Right-click the desktop → Edit Widgets… → search \"Pitwall\"."
 fi
