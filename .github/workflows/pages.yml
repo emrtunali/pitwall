@@ -1,0 +1,54 @@
+name: Build data & deploy site
+
+# Rebuilds every completed race from OpenF1 and publishes the site to GitHub Pages.
+# Runs on every push, every Monday morning (after a race weekend) and on demand.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      # OpenF1 responses are immutable once a race is over, so the cache only ever grows:
+      # after the first run, a weekly rebuild fetches just the newest race.
+      - uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: openf1-${{ github.run_id }}
+          restore-keys: openf1-
+      - run: pitwall build
+      - run: pitwall evaluate
+      - run: cp -r results site/results
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
