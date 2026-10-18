@@ -32,11 +32,13 @@ class OpenF1:
         digest = hashlib.sha1(query.encode()).hexdigest()[:16]
         return self.cache_dir / endpoint / f"{digest}.json.gz"
 
-    def get(self, endpoint: str, **params) -> list[dict]:
+    def get(self, endpoint: str, cache: bool = True, **params) -> list[dict]:
+        """GET an endpoint. Finished-session data never changes, so it is cached forever; pass
+        ``cache=False`` for things that do change (the season calendar, cancellations)."""
         # OpenF1 filters such as ``date>`` are written as part of the key: get("location", **{"date>": "..."})
         query = urlencode(sorted(params.items()), safe=":<>")
         path = self._cache_path(endpoint, query)
-        if path.exists():
+        if cache and path.exists():
             return json.loads(gzip.decompress(path.read_bytes()))
         url = f"{BASE_URL}/{endpoint}?{query}"
         for attempt in range(6):
@@ -56,6 +58,8 @@ class OpenF1:
             break
         else:
             raise RuntimeError(f"OpenF1 request kept failing: {url}")
+        if not cache or not data:
+            return data  # never cache an empty answer: the data may simply not be published yet
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(gzip.compress(json.dumps(data).encode(), compresslevel=6))
         return data

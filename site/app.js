@@ -9,7 +9,7 @@ const SVGNS = "http://www.w3.org/2000/svg";
 
 const S = {
   index: null, race: null, pos: null, t: 0, playing: false, speed: 16, focus: null,
-  selected: new Set(), chart: "gaps", gapMode: "leader", lastFrame: 0, derived: null,
+  selected: new Set(), chart: "win", showPasses: false, gapMode: "leader", lastFrame: 0, derived: null,
 };
 
 // ---------- helpers ----------
@@ -41,6 +41,12 @@ function niceTicks(min, max, n = 6) {
 // ---------- data ----------
 async function loadIndex() {
   S.index = await (await fetch(`data/${YEAR}/index.json`)).json();
+  const nx = S.index.next_race, upd = S.index.updated_at;
+  if (upd) {
+    let txt = `Data ${upd.slice(0, 10)}`;
+    if (nx) { const days = Math.ceil((new Date(nx.start) - new Date()) / 864e5); txt += ` · next: ${nx.circuit} in ${days}d`; }
+    $("status").textContent = txt;
+  }
   const sel = $("raceSelect");
   sel.innerHTML = "";
   [...S.index.races].reverse().forEach((r) => {
@@ -185,6 +191,7 @@ function renderFrame() {
     if (finishedAt(d.num, t)) return;
     const xy = carXY(i, t); if (xy) cars.push({ d, x: view.tx(xy[0]), y: view.ty(xy[1]), pos: positionOf(d.num, t) });
   });
+  if (S.showPasses) drawPasses(t);
   cars.sort((a, b) => b.pos - a.pos); // leader drawn last (on top)
   for (const c of cars) {
     const focus = S.focus === c.d.num;
@@ -205,6 +212,16 @@ function renderFrame() {
   renderTicker(t); renderBoard(t); updateScrub(); updateCursor(lap);
 }
 
+function drawPasses(t) {
+  for (const p of S.race.insights.overtakes) {
+    if (p.x == null || p.t > t) continue;
+    const age = t - p.t, fresh = age < 20;
+    const d = S.derived.byNum[p.by];
+    ctx.beginPath(); ctx.arc(view.tx(p.x), view.ty(p.y), fresh ? 10 - age / 4 : 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = fresh ? d.colour : "#ffffff55"; ctx.globalAlpha = fresh ? 0.55 : 1; ctx.fill(); ctx.globalAlpha = 1;
+    if (fresh) { ctx.font = "700 10px system-ui"; ctx.fillStyle = "#fff"; ctx.fillText(`${d.code} ▸ ${S.derived.byNum[p.on]?.code ?? ""}`, view.tx(p.x) + 12, view.ty(p.y) + 14); }
+  }
+}
 function renderTicker(t) {
   const rc = S.race.race_control; const i = bisect(rc, t);
   const items = rc.slice(Math.max(0, i - 3), i + 1).filter((m) => t - m[0] < 90 && m[4]);
@@ -216,8 +233,18 @@ function renderTicker(t) {
   }
 }
 
+const fmtPct = (p) => (p >= 0.995 ? ">99%" : p < 0.005 ? "<1%" : `${Math.round(p * 100)}%`);
+function winAt(lap) { // calibrated win probability at the end of the given leader lap
+  const W = S.race.win_probability; if (!W || !W.laps.length || lap < W.laps[0]) return {};
+  let i = W.laps.length - 1; while (i > 0 && W.laps[i] > lap) i--;
+  const out = {}; for (const [num, arr] of Object.entries(W.win)) out[num] = arr[i];
+  // drivers outside the published series are below 3 % all race
+  for (const d of S.race.drivers) if (out[d.num] == null) out[d.num] = 0;
+  return out;
+}
 function renderBoard(t) {
   const lap = leaderLap(t);
+  const wp = winAt(lap - 1);
   const rows = S.race.drivers.map((d) => ({ d, pos: positionOf(d.num, t), iv: intervalOf(d.num, t), lap: lapOf(d.num, t) }));
   rows.sort((a, b) => a.pos - b.pos);
   const ol = $("leaderboard");
@@ -235,7 +262,8 @@ function renderBoard(t) {
     li.innerHTML = `<span class="pos">${r.pos < 99 ? r.pos : "–"}</span>
       <span class="drv"><i style="background:${r.d.colour}"></i>${r.d.code} <small>${r.d.team}</small></span>
       <span class="gap">${out ? "OUT" : inPit(r.d.num, t) ? '<span class="pitflag">IN PIT</span>' : gap}</span>
-      <span class="tyre">${ty ? `<i class="c-${ty.compound}"></i>${ty.age}` : ""}</span>`;
+      <span class="tyre">${ty ? `<i class="c-${ty.compound}"></i>${ty.age}` : ""}</span>
+      <span class="win ${wp[r.d.num] >= 0.2 ? "hot" : ""}">${wp[r.d.num] != null ? fmtPct(wp[r.d.num]) : ""}</span>`;
   });
 }
 
@@ -244,6 +272,7 @@ function updatePlay() { $("play").textContent = S.playing ? "❚❚" : "▶"; }
 function bounds() { return [S.derived.lapStart1 - 60, S.race.meta.t_end + 20]; }
 function updateScrub() {
   const [a, b] = bounds(); $("scrub").value = ((S.t - a) / (b - a)) * 1000;
+  if (!S.tlImage) return;
   const c = $("timelineCanvas"), g = c.getContext("2d"), dpr = window.devicePixelRatio || 1, w = c.width / dpr;
   g.putImageData(S.tlImage, 0, 0);
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -252,6 +281,7 @@ function updateScrub() {
 }
 function drawTimeline() {
   const c = $("timelineCanvas"), dpr = window.devicePixelRatio || 1, r = c.getBoundingClientRect();
+  if (!r.width) return; // replay view hidden (season tab): nothing to draw
   c.width = r.width * dpr; c.height = r.height * dpr;
   const g = c.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0);
   const [a, b] = bounds(), X = scale(a, b, 0, r.width);
@@ -317,6 +347,7 @@ function renderLegend() {
   }
 }
 const HELP = {
+  win: "Live win probability after every lap. A Monte Carlo race simulator that only uses data available at that moment (pace model refitted each lap, tyres, mandatory stops, pit loss, Safety Car and retirement risk), calibrated on the first 8 races of the season. See results/WINPROB.md for how well calibrated it is.",
   gaps: "Seconds behind the leader at the end of every lap, computed from official lap timing. Click drivers below to compare; the dashed line follows the replay.",
   positions: "Running order at the end of each lap. Shaded bands are Safety Car / VSC periods.",
   strategy: "Every stint by compound, in finishing order. Numbers are tyre age at the start of a stint when tyres were used before.",
@@ -326,7 +357,7 @@ const HELP = {
 function renderChart() {
   document.querySelectorAll("#chartTabs button").forEach((b) => b.classList.toggle("on", b.dataset.chart === S.chart));
   $("chartHelp").textContent = HELP[S.chart];
-  ({ gaps: chartGaps, positions: chartPositions, strategy: chartStrategy, pace: chartPace, window: chartWindow })[S.chart]();
+  ({ win: chartWin, gaps: chartGaps, positions: chartPositions, strategy: chartStrategy, pace: chartPace, window: chartWindow })[S.chart]();
   renderLegend(); updateCursor(leaderLap(S.t));
 }
 let cursorFn = null;
@@ -337,6 +368,21 @@ function addCursor(f, X) {
 }
 function shadeNeutral(f, X) {
   for (const [a, b, k] of neutralLaps()) el("rect", { x: X(a), y: f.M.t, width: Math.max(2, X(b) - X(a)), height: f.ih, fill: NEUTRAL[k], opacity: 0.08 }, f.svg);
+}
+function chartWin() {
+  const W = S.race.win_probability, f = frame($("chart"), 340, { l: 52, r: 80, t: 14, b: 30 }), N = S.race.meta.total_laps;
+  if (!W || !W.laps.length) { $("chart").innerHTML = '<p class="note">Not enough data to simulate this race.</p>'; return; }
+  const X = scale(1, N, f.M.l, f.W - f.M.r), Y = scale(0, 1, f.H - f.M.b, f.M.t);
+  shadeNeutral(f, X); axes(f, X, Y, niceTicks(1, N, 10), [0, 0.25, 0.5, 0.75, 1], (v) => `${v * 100}%`);
+  const placed = [];
+  const order = Object.entries(W.win).sort((a, b) => b[1][b[1].length - 1] - a[1][a[1].length - 1]);
+  for (const [num, arr] of order) {
+    const d = S.derived.byNum[num]; if (!d) continue;
+    el("path", { d: "M" + W.laps.map((l, i) => `${X(l)},${Y(arr[i])}`).join("L"), stroke: d.colour, "stroke-width": 2.2, fill: "none" }, f.svg);
+    let y = Y(arr[arr.length - 1]) + 4; while (placed.some((p) => Math.abs(p - y) < 12)) y -= 12; placed.push(y);
+    el("text", { x: X(W.laps[W.laps.length - 1]) + 6, y, class: "label", fill: d.colour }, f.svg).textContent = `${d.code} ${fmtPct(arr[arr.length - 1])}`;
+  }
+  addCursor(f, X);
 }
 function chartGaps() {
   const f = frame($("chart")), N = S.race.meta.total_laps, D = S.derived;
@@ -472,7 +518,7 @@ async function renderSeason() {
     c.onclick = () => { setView("replay"); loadRace(r.slug); };
     cards.appendChild(c);
   }
-  seasonChamp(); seasonDeg(); seasonLoss();
+  seasonChamp(); seasonPasses(); seasonPace(); seasonDeg(); seasonLoss();
 }
 function seasonChamp() {
   const st = S.index.standings, rounds = st.rounds, last = rounds[rounds.length - 1].points;
@@ -493,6 +539,36 @@ function seasonChamp() {
     placed.push(y);
     el("text", { x: f.W - f.M.r + 6, y, class: "label", fill: d.colour }, f.svg).textContent = `${d.code} ${last[num]}`;
   });
+}
+function seasonPasses() {
+  const races = S.index.races.filter((r) => r.dirty_air?.cost != null);
+  const f = frame($("passChart"), 360, { l: 56, r: 30, t: 14, b: 40 });
+  const xs = races.flatMap((r) => r.dirty_air.ci90), ys = races.map((r) => r.overtakes);
+  const X = scale(Math.min(0, ...xs), Math.max(...xs) * 1.05, f.M.l, f.W - f.M.r), Y = scale(0, Math.max(...ys) * 1.1, f.H - f.M.b, f.M.t);
+  axes(f, X, Y, niceTicks(Math.min(0, ...xs), Math.max(...xs), 8).map((v) => +v.toFixed(2)), niceTicks(0, Math.max(...ys), 5));
+  el("text", { x: f.W - f.M.r, y: f.H - 22, "text-anchor": "end", class: "muted" }, f.svg).textContent = "time lost per lap within 1 s of the car ahead (s) →";
+  el("text", { x: f.M.l + 4, y: f.M.t + 10, class: "muted" }, f.svg).textContent = "↑ on-track passes";
+  for (const r of races) {
+    const [a, b] = r.dirty_air.ci90, x = X(r.dirty_air.cost), y = Y(r.overtakes);
+    el("line", { x1: X(a), x2: X(b), y1: y, y2: y, stroke: "#ffffff40" }, f.svg);
+    el("circle", { cx: x, cy: y, r: 5, fill: "#e10600" }, f.svg);
+    el("text", { x: x + 8, y: y - 6, class: "muted" }, f.svg).textContent = r.circuit;
+  }
+}
+function seasonPace() {
+  const races = S.index.races, teams = {};
+  races.forEach((r, i) => Object.entries(r.team_pace || {}).forEach(([t, v]) => ((teams[t] ||= [])[i] = v)));
+  // median, so one wet race does not dominate a team's season figure
+  const avg = (a) => { const v = a.filter((x) => x != null).sort((x, y) => x - y), m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
+  const rows = Object.entries(teams).sort((a, b) => avg(a[1]) - avg(b[1]));
+  const cell = (v) => {
+    if (v == null) return "<td>–</td>";
+    if (v > 3) return `<td title="${v.toFixed(2)} s/lap (mostly wet laps)">3+</td>`;
+    const a = Math.max(0.08, 1 - Math.min(v, 1.5) / 1.5);
+    return `<td style="background:rgba(225,6,0,${a.toFixed(2)})">${v.toFixed(2)}</td>`;
+  };
+  $("paceTable").innerHTML = `<div class="heat-wrap"><table class="heat"><tr><th>Team</th>${races.map((r) => `<th>${r.circuit.slice(0, 6)}</th>`).join("")}<th>median</th></tr>
+    ${rows.map(([t, v]) => `<tr><td>${t}</td>${races.map((_, i) => cell(v[i])).join("")}<td>${avg(v).toFixed(2)}</td></tr>`).join("")}</table></div>`;
 }
 function seasonDeg() {
   const races = S.index.races, comps = ["SOFT", "MEDIUM", "HARD"];
@@ -536,6 +612,7 @@ function setView(v) {
 }
 function wire() {
   $("play").onclick = () => { S.playing = !S.playing; updatePlay(); };
+  $("passToggle").onclick = () => { S.showPasses = !S.showPasses; $("passToggle").classList.toggle("on", S.showPasses); renderFrame(); };
   $("scrub").oninput = (e) => { const [a, b] = bounds(); S.t = a + (e.target.value / 1000) * (b - a); renderFrame(); };
   $("speeds").onclick = (e) => {
     const b = e.target.closest("button"); if (!b) return;

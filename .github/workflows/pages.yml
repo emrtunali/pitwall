@@ -1,12 +1,13 @@
 name: Build data & deploy site
 
 # Rebuilds every completed race from OpenF1 and publishes the site to GitHub Pages.
-# Runs on every push, every Monday morning (after a race weekend) and on demand.
+# Runs on every push, every day at 06:00 UTC and on demand. A race is picked up once it finished at
+# least 12 hours earlier; thanks to the cache a daily run with no new race takes about a minute.
 on:
   push:
     branches: [main]
   schedule:
-    - cron: "0 6 * * 1"
+    - cron: "0 6 * * *"
   workflow_dispatch:
 
 permissions:

@@ -43,7 +43,17 @@ main { max-width: 1440px; margin: 0 auto; padding: 14px 18px 8px; }
 .loading { position: absolute; inset: 0; display: grid; place-items: center; background: #0d0f12cc; font-weight: 600; color: var(--muted); }
 
 .board { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; display: flex; flex-direction: column; }
-.board-head, #leaderboard li { display: grid; grid-template-columns: 34px 1fr 78px 64px; align-items: center; gap: 6px; padding: 0 12px; }
+.board-head, #leaderboard li { display: grid; grid-template-columns: 30px minmax(0, 1fr) 72px 50px 40px; align-items: center; gap: 6px; padding: 0 12px; }
+.win { font-family: var(--mono); font-size: 11px; text-align: right; color: var(--muted); }
+.win.hot { color: #fff; font-weight: 700; }
+.overlay-toggle { position: absolute; top: 12px; right: 14px; background: #000a; border: 1px solid var(--line); border-radius: 10px; padding: 6px 12px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.overlay-toggle.on { color: #fff; border-color: #ffffff60; }
+.status { color: var(--muted); font-size: 12px; font-family: var(--mono); margin-left: 8px; }
+.heat { width: 100%; border-collapse: collapse; font-size: 12px; font-family: var(--mono); }
+.heat th, .heat td { padding: 4px 6px; text-align: center; border-bottom: 1px solid #ffffff08; white-space: nowrap; }
+.heat th { color: var(--muted); font-weight: 500; }
+.heat td:first-child, .heat th:first-child { text-align: left; font-family: system-ui; font-weight: 700; }
+.heat-wrap { overflow-x: auto; }
 .board-head { height: 32px; color: var(--muted); font-size: 11px; letter-spacing: .08em; border-bottom: 1px solid var(--line); }
 #gapMode { cursor: pointer; text-decoration: underline dotted; }
 #leaderboard { list-style: none; margin: 0; padding: 0; overflow: auto; }
@@ -110,6 +120,7 @@ main { max-width: 1440px; margin: 0 auto; padding: 14px 18px 8px; }
   .map-wrap { min-height: 360px; }
   .board { max-height: 380px; }
   .race-pick span { display: none; }
+  .status { display: none; }
 }
 @media (max-width: 600px) {
   .top { flex-wrap: wrap; gap: 10px; padding: 10px 16px; }

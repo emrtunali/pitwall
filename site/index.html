@@ -15,6 +15,7 @@
     <button data-view="replay" class="on">Race replay</button>
     <button data-view="season">Season</button>
   </nav>
+  <span class="status" id="status"></span>
   <label class="race-pick">
     <span>Race</span>
     <select id="raceSelect"></select>
@@ -30,11 +31,12 @@
         <div class="flag" id="flag"></div>
         <div class="weather" id="weather"></div>
       </div>
+      <button class="overlay-toggle" id="passToggle" title="Show where on-track passes were registered">Overtakes</button>
       <ul class="ticker" id="ticker"></ul>
       <div class="loading" id="loading">Loading race…</div>
     </div>
     <aside class="board">
-      <div class="board-head"><span>POS</span><span>DRIVER</span><span id="gapMode" title="Click to switch">GAP</span><span>TYRE</span></div>
+      <div class="board-head"><span>POS</span><span>DRIVER</span><span id="gapMode" title="Click to switch">GAP</span><span>TYRE</span><span title="Live win probability (model)">WIN</span></div>
       <ol id="leaderboard"></ol>
     </aside>
   </section>
@@ -53,7 +55,8 @@
 
   <section class="analysis">
     <nav class="subtabs" id="chartTabs">
-      <button data-chart="gaps" class="on">Gap to leader</button>
+      <button data-chart="win" class="on">Win probability</button>
+      <button data-chart="gaps">Gap to leader</button>
       <button data-chart="positions">Positions</button>
       <button data-chart="strategy">Tyre strategy</button>
       <button data-chart="pace">Pace &amp; degradation</button>
@@ -71,6 +74,12 @@
     <h2>Drivers' championship</h2>
     <p class="note" id="champNote"></p>
     <div class="chart" id="champChart"></div>
+    <h2>Overtaking difficulty</h2>
+    <p class="note">Each circuit: how much a car lost per lap while running within 1 s of the car ahead (after removing tyres, fuel and driver pace with the race model; 90 % cluster-bootstrap interval) against the number of on-track passes. Not published anywhere else: both are derived from raw timing.</p>
+    <div class="chart" id="passChart"></div>
+    <h2>True race pace by team</h2>
+    <p class="note">Seconds per lap behind the fastest team on equal tyres and fuel (the model's pace term), race by race. Darker = closer to the front; last column is the season median.</p>
+    <div class="chart" id="paceTable"></div>
     <h2>Tyre degradation by circuit</h2>
     <p class="note">Seconds lost per lap of tyre age, from the race-pace model (fuel and track evolution removed). Bars show 90 % bootstrap intervals.</p>
     <div class="chart" id="degChart"></div>

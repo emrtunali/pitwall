@@ -88,7 +88,7 @@ def pit_stops(race: Race) -> list[tuple[int, int]]:
     return sorted((lap.driver, lap.lap) for lap in race.laps if lap.pit_out and lap.lap > 1)
 
 
-def clean_laps(race: Race, windows: list[Window] | None = None, slow_factor: float = 1.07) -> list[dict]:
+def clean_laps(race: Race, windows: list[Window] | None = None, slow_factor: float | None = 1.07) -> list[dict]:
     """Green-flag racing laps usable for pace and tyre modelling.
 
     Excludes lap 1, pit-out laps, in-laps, laps touching a neutralised window (plus 10 s margin),
@@ -118,6 +118,8 @@ def clean_laps(race: Race, windows: list[Window] | None = None, slow_factor: flo
                 "tyre_age": (stint.get("tyre_age_at_start") or 0) + lap.lap - stint["lap_start"],
             }
         )
+    if slow_factor is None:
+        return rows
     by_driver: dict[int, list[float]] = {}
     for r in rows:
         by_driver.setdefault(r["driver"], []).append(r["time"])

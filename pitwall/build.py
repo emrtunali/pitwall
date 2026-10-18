@@ -8,17 +8,19 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
 
+from .insights import corrected_pace, dirty_air, overtakes
 from .laps import clean_laps, neutral_windows, pit_stops
 from .model import fit
 from .openf1 import OpenF1
 from .race import Race, fetch_race
 from .strategy import pit_loss, what_if
 from .track import rdp, resample_positions, track_outline
+from .winprob import CALIBRATION, N_PRIOR_RACES, Priors, calibrated, estimate_priors, win_probabilities
 
 HZ = 4.0
 
@@ -31,7 +33,7 @@ def _r(x: float | None, nd: int = 3) -> float | None:
     return None if x is None else round(float(x), nd)
 
 
-def race_bundle(race: Race) -> tuple[dict, np.ndarray]:
+def race_bundle(race: Race, priors: Priors | None = None) -> tuple[dict, np.ndarray]:
     windows = neutral_windows(race)
     rows = clean_laps(race, windows)
     model = fit(rows, bootstrap=300)
@@ -91,6 +93,13 @@ def race_bundle(race: Race) -> tuple[dict, np.ndarray]:
                      "points": r.get("points"), "dnf": r.get("dnf"), "dns": r.get("dns"), "dsq": r.get("dsq"),
                      "gap": r.get("gap_to_leader")} for r in race.results],
         "model": model.to_json() | {"pit_loss": loss, "predicted": predicted},
+        "insights": {
+            "dirty_air": dirty_air(race, model, rows),
+            "overtakes": overtakes(race, windows),
+            "corrected_pace": corrected_pace(model, race),
+        },
+        "win_probability": calibrated(win_probabilities(race, windows, priors or Priors(), sims=2000,
+                                                        kappa=CALIBRATION["kappa"])["states"]),
         "strategy": {str(d): s for d in order if loss["median"] and (s := what_if(race, model, loss["median"], d))},
     }
     return bundle, grid
@@ -108,8 +117,8 @@ def pit_list(race: Race) -> list[dict]:
     return out
 
 
-def write_race(race: Race, out_dir: Path) -> dict:
-    bundle, grid = race_bundle(race)
+def write_race(race: Race, out_dir: Path, priors: Priors | None = None) -> dict:
+    bundle, grid = race_bundle(race, priors)
     slug = slugify(race.name)
     d = out_dir / slug
     d.mkdir(parents=True, exist_ok=True)
@@ -124,6 +133,9 @@ def write_race(race: Race, out_dir: Path) -> dict:
         "deg": bundle["model"]["deg_per_lap"], "deg_ci": bundle["model"]["deg_ci90"],
         "pit_loss": bundle["model"]["pit_loss"]["median"],
         "outline": rdp_outline(bundle["track"]["outline"]),
+        "dirty_air": bundle["insights"]["dirty_air"],
+        "overtakes": len(bundle["insights"]["overtakes"]),
+        "team_pace": bundle["insights"]["corrected_pace"]["teams"],
     }
 
 
@@ -134,10 +146,19 @@ def rdp_outline(points: list[list[int]], eps: float = 60.0) -> list[list[int]]:
     return np.vstack([rdp(arr[: mid + 1], eps), rdp(arr[mid:], eps)[1:]]).round().astype(int).tolist()
 
 
-def completed_races(api: OpenF1, year: int) -> list[dict]:
+SETTLE = timedelta(hours=12)  # OpenF1 needs a little time after the chequered flag to publish everything
+
+
+def season_calendar(api: OpenF1, year: int) -> list[dict]:
+    return api.get("sessions", cache=False, year=year, session_name="Race")
+
+
+def completed_races(api: OpenF1, year: int, calendar: list[dict] | None = None) -> list[dict]:
+    """Races that finished at least SETTLE ago. Waiting matters: responses are cached forever, so
+    caching a half-published race would freeze an incomplete copy of it."""
     now = datetime.now(UTC)
-    return [s for s in api.get("sessions", year=year, session_name="Race")
-            if not s.get("is_cancelled") and datetime.fromisoformat(s["date_end"]) < now]
+    calendar = season_calendar(api, year) if calendar is None else calendar
+    return [s for s in calendar if not s.get("is_cancelled") and datetime.fromisoformat(s["date_end"]) + SETTLE < now]
 
 
 def season_standings(api: OpenF1, sessions: list[dict], year: int) -> dict:
@@ -174,18 +195,32 @@ def season_standings(api: OpenF1, sessions: list[dict], year: int) -> dict:
 
 def build_site(api: OpenF1, out_root: Path, year: int = 2026, only: set[int] | None = None) -> list[dict]:
     out_dir = out_root / str(year)
-    index = []
-    for s in completed_races(api, year):
-        if only and s["session_key"] not in only:
-            continue
-        race = fetch_race(api, s)
-        index.append(write_race(race, out_dir))
-        print(f"✓ {race.name}", flush=True)
-    sessions = [s for s in completed_races(api, year) if not only or s["session_key"] in only]
+    calendar = season_calendar(api, year)
+    sessions = [s for s in completed_races(api, year, calendar) if not only or s["session_key"] in only]
+    index, skipped = [], []
+    first = sorted(completed_races(api, year, calendar), key=lambda s: s["date_start"])[:N_PRIOR_RACES]
+    early = [fetch_race(api, s, with_locations=False) for s in first]
+    priors = estimate_priors([(r, neutral_windows(r)) for r in early])
+    for s in sessions:
+        try:
+            race = fetch_race(api, s)
+            index.append(write_race(race, out_dir, priors))
+            print(f"✓ {race.name}", flush=True)
+        except Exception as exc:  # one broken race must not take the whole site down
+            skipped.append({"circuit": s["circuit_short_name"], "error": f"{type(exc).__name__}: {exc}"})
+            print(f"✗ {s['circuit_short_name']}: {exc}", flush=True)
+    sessions = [s for s in sessions if s["circuit_short_name"] not in {x["circuit"] for x in skipped}]
+    now = datetime.now(UTC)
+    upcoming = sorted((s for s in calendar
+                       if not s.get("is_cancelled") and datetime.fromisoformat(s["date_start"]) > now),
+                      key=lambda s: s["date_start"])
+    meta = {"updated_at": now.isoformat(timespec="minutes"), "skipped": skipped,
+            "next_race": {"circuit": upcoming[0]["circuit_short_name"], "country": upcoming[0]["country_name"],
+                          "start": upcoming[0]["date_start"]} if upcoming else None}
     standings = season_standings(api, sessions, year)
     v = standings["validation"]
     print(f"standings: {v['driver_round_pairs_checked']} checks against the official table, "
           f"{len(v['mismatches'])} mismatches", flush=True)
-    (out_dir / "index.json").write_text(json.dumps({"year": year, "races": index, "standings": standings},
+    (out_dir / "index.json").write_text(json.dumps({"year": year, "races": index, "standings": standings} | meta,
                                                    ensure_ascii=False, separators=(",", ":")))
     return index
